@@ -1,0 +1,10 @@
+{
+  "application": "Astro-Wolkencheck Geiselhöring",
+  "version": "4.2.1",
+  "releaseTag": "v4.2.1",
+  "productionIndexSha256": "95a241161f1e5b241c8691c11b79ee69274edbc63943ae7c1cf12d836c229f01",
+  "sourceCommit": "cbb054dc874158cfd8e6bd0ac454383fb466af87",
+  "deployedAtUtc": "2026-07-23T10:59:26Z",
+  "deploymentRepository": "gtowncity/astro-wolkencheck-geiselhoering",
+  "deploymentBranch": "main"
+}
