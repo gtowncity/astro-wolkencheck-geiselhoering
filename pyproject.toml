@@ -56,3 +56,14 @@ select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
 python_version = "3.12"
 strict = true
 warn_unused_configs = true
+
+[[tool.mypy.overrides]]
+module = [
+  "defusedxml",
+  "defusedxml.*",
+  "h5py",
+  "h5py.*",
+  "shapely",
+  "shapely.*",
+]
+ignore_missing_imports = true
