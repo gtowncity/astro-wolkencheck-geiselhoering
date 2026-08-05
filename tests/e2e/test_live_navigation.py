@@ -124,7 +124,7 @@ def html_shell() -> str:
       <section id='windows' class='tab-panel'>
         <div class='panel'>
           <h2>Beste zusammenhängende Zeiten</h2>
-          <div id='windowsContent'>Samstag 23:00–04:00 Uhr</div>
+          <div id='windowsContent'>Samstag 23:00-04:00 Uhr</div>
         </div>
       </section>
       <section id='hours' class='tab-panel'><div class='panel'>Stunden</div></section>
@@ -236,7 +236,10 @@ def test_live_dashboard_becomes_now_view_and_windows_join_planning() -> None:
         assert labels == ["JETZT", "NACHT PLANEN", "STUNDEN", "DATEN & DIAGNOSE"]
         assert page.locator(".tab-button[data-tab='windows']").count() == 0
         assert page.locator("#obsolete-nowcast").count() == 0
-        assert page.locator("#live-dashboard-root").evaluate("node => node.parentElement.id") == "nowcast"
+        parent_id = page.locator("#live-dashboard-root").evaluate(
+            "node => node.parentElement.id"
+        )
+        assert parent_id == "nowcast"
         assert page.locator("#nowcast").is_visible()
         assert page.locator("#overview").is_hidden()
         assert page.locator("#windowsContent").count() == 1
@@ -249,7 +252,10 @@ def test_live_dashboard_becomes_now_view_and_windows_join_planning() -> None:
         assert page.locator("#windowsContent").is_visible()
 
         page.set_viewport_size({"width": 390, "height": 844})
-        no_overflow = "document.documentElement.scrollWidth <= document.documentElement.clientWidth"
+        no_overflow = (
+            "document.documentElement.scrollWidth <= "
+            "document.documentElement.clientWidth"
+        )
         assert page.evaluate(no_overflow)
         select = page.locator("#mobileTabSelect")
         assert select.locator("option").all_inner_texts() == [
