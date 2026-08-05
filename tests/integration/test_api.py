@@ -45,6 +45,8 @@ def test_runtime_config_explicitly_identifies_local_mode(tmp_path: Path) -> None
         "mode": "LOCAL",
         "localApiAvailable": True,
         "apiBase": "/api/v1",
+        "browserAudioEnabled": True,
+        "browserNotificationsEnabled": True,
     }
 
 
