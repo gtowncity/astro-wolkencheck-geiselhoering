@@ -18,8 +18,9 @@ RETRIEVED_AT = datetime(2026, 8, 5, 7, 0, tzinfo=UTC)
 
 def feature_collection(
     *,
-    warncell_id: str = "808401123",
+    warncell_id: str | int = "808401123",
     name: str = "Stadt Geiselhöring",
+    short_name_key: str = "SHORTNAME",
     geometry: dict[str, object] | None = None,
     crs_name: str = "urn:ogc:def:crs:OGC:1.3:CRS84",
 ) -> bytes:
@@ -47,7 +48,7 @@ def feature_collection(
                     "properties": {
                         "WARNCELLID": warncell_id,
                         "NAME": name,
-                        "SHORTNAME": "Geiselhöring",
+                        short_name_key: "Geiselhöring",
                         "CONTACT": "Landratsamt Straubing-Bogen",
                     },
                 }
@@ -82,6 +83,18 @@ def test_verified_schema_parses_and_covers_geiselhoering() -> None:
     area = index.areas[0]
     assert area.name == "Stadt Geiselhöring"
     assert area.short_name == "Geiselhöring"
+
+
+def test_current_numeric_dwd_schema_and_german_short_name_parse() -> None:
+    index = parse_warning_area_geojson(
+        feature_collection(warncell_id=809278123, short_name_key="KURZNAME"),
+        retrieved_at=RETRIEVED_AT,
+    )
+
+    area = index.areas[0]
+    assert area.warncell_id == "809278123"
+    assert area.short_name == "Geiselhöring"
+    assert index.ids_covering(12.40, 48.84) == ("809278123",)
 
 
 def test_cap_geocode_resolves_match_nonmatch_and_unknown() -> None:
@@ -133,7 +146,7 @@ def test_empty_geocode_set_is_unknown() -> None:
     assert index.match_ids((), longitude=12.40, latitude=48.84) is LocationMatch.UNKNOWN
 
 
-def test_invalid_schema_crs_geometry_and_duplicates_are_rejected() -> None:
+def test_invalid_schema_crs_geometry_identifiers_and_duplicates_are_rejected() -> None:
     with pytest.raises(WarningAreaError, match="CRS"):
         parse_warning_area_geojson(
             feature_collection(crs_name="EPSG:3857"),
@@ -144,6 +157,12 @@ def test_invalid_schema_crs_geometry_and_duplicates_are_rejected() -> None:
             feature_collection(geometry={"type": "Point", "coordinates": [12.4, 48.84]}),
             retrieved_at=RETRIEVED_AT,
         )
+    for invalid_identifier in (True, 12.5, "not-a-number"):
+        with pytest.raises(WarningAreaError, match="WARNCELLID"):
+            parse_warning_area_geojson(
+                feature_collection(warncell_id=invalid_identifier),
+                retrieved_at=RETRIEVED_AT,
+            )
     duplicate = json.loads(feature_collection())
     duplicate["features"].append(duplicate["features"][0])
     with pytest.raises(WarningAreaError, match="Duplicate"):
