@@ -55,7 +55,9 @@ def test_preview_is_labeled_and_switches_unified_dashboard_states() -> None:
         page.wait_for_function(
             "document.getElementById('awc-live-axis')?.dataset.tone === 'UNKNOWN'"
         )
-        assert "Radarquelle ist ausgefallen" in dashboard.inner_text()
+        assert "Live-Sicherheitslage nicht zuverlässig beurteilbar" in (
+            dashboard.inner_text()
+        )
 
         page.locator("[data-preview-state='GREEN']").click()
         page.wait_for_function(
