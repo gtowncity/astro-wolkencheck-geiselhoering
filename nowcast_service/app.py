@@ -23,6 +23,22 @@ from nowcast_service.sources.runtime_base import SourceRunner
 SCHEMA_VERSION = "1.1"
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 PACKAGE_ROOT = Path(__file__).resolve().parent
+STYLE_ASSETS = (
+    "local-live.css",
+    "local-live-timeline.css",
+    "local-live-details.css",
+    "local-live-navigation.css",
+)
+SCRIPT_ASSETS = (
+    "local-live.js",
+    "local-live-timeline.js",
+    "local-live-details.js",
+    "local-live-navigation.js",
+)
+LOCAL_ASSETS = {
+    **{name: "text/css" for name in STYLE_ASSETS},
+    **{name: "text/javascript" for name in SCRIPT_ASSETS},
+}
 
 
 class SessionPatch(BaseModel):
@@ -56,7 +72,9 @@ def create_app(
     if runners is None:
         runners = _production_runners(config, config_store.data_dir) if enable_background else ()
     coordinator = RuntimeCoordinator(
-        config=config, data_dir=config_store.data_dir, source_runners=runners
+        config=config,
+        data_dir=config_store.data_dir,
+        source_runners=runners,
     )
 
     @asynccontextmanager
@@ -78,7 +96,8 @@ def create_app(
         lifespan=lifespan,
     )
     application.add_middleware(
-        TrustedHostMiddleware, allowed_hosts=["127.0.0.1", "localhost", "testserver"]
+        TrustedHostMiddleware,
+        allowed_hosts=["127.0.0.1", "localhost", "testserver"],
     )
     application.state.config_store = config_store
     application.state.coordinator = coordinator
@@ -86,16 +105,22 @@ def create_app(
 
     @application.middleware("http")
     async def add_security_headers(
-        request: Request, call_next: Callable[[Request], Awaitable[Response]]
+        request: Request,
+        call_next: Callable[[Request], Awaitable[Response]],
     ) -> Response:
         response = await call_next(request)
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["Referrer-Policy"] = "no-referrer"
-        response.headers["Permissions-Policy"] = "geolocation=(self), microphone=(), camera=()"
+        response.headers["Permissions-Policy"] = (
+            "geolocation=(self), microphone=(), camera=()"
+        )
         response.headers["Content-Security-Policy"] = (
-            "default-src 'self' https: data: blob:; script-src 'self' 'unsafe-inline' https:; "
-            "style-src 'self' 'unsafe-inline' https:; connect-src 'self' https:; "
-            "img-src 'self' https: data: blob:; font-src 'self' https: data:"
+            "default-src 'self' https: data: blob:; "
+            "script-src 'self' 'unsafe-inline' https:; "
+            "style-src 'self' 'unsafe-inline' https:; "
+            "connect-src 'self' https:; "
+            "img-src 'self' https: data: blob:; "
+            "font-src 'self' https: data:"
         )
         if request.url.path.startswith("/api/"):
             response.headers["Cache-Control"] = "no-store"
@@ -139,7 +164,12 @@ def create_app(
     def csrf(response: Response) -> dict[str, str]:
         token = new_csrf_token()
         response.set_cookie(
-            key=CSRF_COOKIE, value=token, httponly=False, secure=False, samesite="strict", path="/"
+            key=CSRF_COOKIE,
+            value=token,
+            httponly=False,
+            secure=False,
+            samesite="strict",
+            path="/",
         )
         return {"token": token}
 
@@ -164,7 +194,8 @@ def create_app(
         )
         config_store.save(updated)
         snapshot = await coordinator.set_equipment_state(
-            patch.equipment_state, configuration_version=updated.configuration_version
+            patch.equipment_state,
+            configuration_version=updated.configuration_version,
         )
         return {
             "schemaVersion": SCHEMA_VERSION,
@@ -201,17 +232,27 @@ def create_app(
     def alerts() -> dict[str, object]:
         return coordinator.alerts_dict()
 
-    @application.post("/api/v1/alerts/acknowledge", dependencies=[Depends(require_csrf)])
+    @application.post(
+        "/api/v1/alerts/acknowledge",
+        dependencies=[Depends(require_csrf)],
+    )
     async def acknowledge_alert() -> dict[str, object]:
         return await coordinator.acknowledge()
 
-    @application.post("/api/v1/runtime/refresh", dependencies=[Depends(require_csrf)])
+    @application.post(
+        "/api/v1/runtime/refresh",
+        dependencies=[Depends(require_csrf)],
+    )
     async def refresh_runtime(source: str | None = None) -> dict[str, object]:
         try:
             selected = await coordinator.refresh(source)
         except KeyError as exc:
             raise HTTPException(status_code=404, detail="Unknown source") from exc
-        return {"status": "ACCEPTED", "sources": selected, "generatedAt": utc_now()}
+        return {
+            "status": "ACCEPTED",
+            "sources": selected,
+            "generatedAt": utc_now(),
+        }
 
     @application.get("/api/v1/diagnostics")
     def diagnostics() -> dict[str, object]:
@@ -256,57 +297,27 @@ def create_app(
         return StreamingResponse(
             generate(),
             media_type="text/event-stream",
-            headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"},
+            headers={
+                "Cache-Control": "no-store",
+                "X-Accel-Buffering": "no",
+            },
         )
 
-    @application.get("/local-live.js")
-    def local_live_js() -> FileResponse:
-        return FileResponse(PACKAGE_ROOT / "static" / "local-live.js", media_type="text/javascript")
-
-    @application.get("/local-live.css")
-    def local_live_css() -> FileResponse:
-        return FileResponse(PACKAGE_ROOT / "static" / "local-live.css", media_type="text/css")
-
-    @application.get("/local-live-timeline.js")
-    def local_live_timeline_js() -> FileResponse:
-        return FileResponse(
-            PACKAGE_ROOT / "static" / "local-live-timeline.js",
-            media_type="text/javascript",
-        )
-
-    @application.get("/local-live-timeline.css")
-    def local_live_timeline_css() -> FileResponse:
-        return FileResponse(
-            PACKAGE_ROOT / "static" / "local-live-timeline.css",
-            media_type="text/css",
-        )
-
-    @application.get("/local-live-details.js")
-    def local_live_details_js() -> FileResponse:
-        return FileResponse(
-            PACKAGE_ROOT / "static" / "local-live-details.js",
-            media_type="text/javascript",
-        )
-
-    @application.get("/local-live-details.css")
-    def local_live_details_css() -> FileResponse:
-        return FileResponse(
-            PACKAGE_ROOT / "static" / "local-live-details.css",
-            media_type="text/css",
-        )
+    @application.get("/{asset_name}")
+    def local_asset(asset_name: str) -> FileResponse:
+        media_type = LOCAL_ASSETS.get(asset_name)
+        if media_type is None:
+            raise HTTPException(status_code=404, detail="Asset not found")
+        return FileResponse(PACKAGE_ROOT / "static" / asset_name, media_type=media_type)
 
     @application.get("/")
     def root() -> HTMLResponse:
         content = (PROJECT_ROOT / "index.html").read_text(encoding="utf-8")
-        styles = (
-            '<link rel="stylesheet" href="/local-live.css">'
-            '<link rel="stylesheet" href="/local-live-timeline.css">'
-            '<link rel="stylesheet" href="/local-live-details.css">'
+        styles = "".join(
+            f'<link rel="stylesheet" href="/{asset}">' for asset in STYLE_ASSETS
         )
-        scripts = (
-            '<script src="/local-live.js" defer></script>'
-            '<script src="/local-live-timeline.js" defer></script>'
-            '<script src="/local-live-details.js" defer></script>'
+        scripts = "".join(
+            f'<script src="/{asset}" defer></script>' for asset in SCRIPT_ASSETS
         )
         if "</head>" in content:
             content = content.replace("</head>", styles + "</head>", 1)
