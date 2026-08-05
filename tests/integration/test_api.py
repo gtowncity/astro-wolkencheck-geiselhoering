@@ -23,6 +23,20 @@ def test_initial_safety_is_unknown_and_never_green(tmp_path: Path) -> None:
     assert response.headers["cache-control"] == "no-store"
 
 
+def test_meta_liveness_and_readiness_are_explicit(tmp_path: Path) -> None:
+    test_client = client(tmp_path)
+
+    meta = test_client.get("/api/v1/meta")
+    live = test_client.get("/api/v1/health/live")
+    ready = test_client.get("/api/v1/health/ready")
+
+    assert meta.status_code == 200
+    assert meta.json()["mode"] == "LOCAL"
+    assert live.json()["status"] == "LIVE"
+    assert ready.json()["status"] == "READY"
+    assert ready.json()["safetyDataReady"] is False
+
+
 def test_runtime_config_explicitly_identifies_local_mode(tmp_path: Path) -> None:
     response = client(tmp_path).get("/runtime-config.json")
 
@@ -43,6 +57,20 @@ def test_session_patch_requires_csrf(tmp_path: Path) -> None:
     )
 
     assert denied.status_code == 403
+
+
+def test_session_patch_rejects_foreign_origin(tmp_path: Path) -> None:
+    test_client = client(tmp_path)
+    csrf = test_client.get("/api/v1/security/csrf").json()["token"]
+
+    denied = test_client.patch(
+        "/api/v1/session",
+        headers={"X-CSRF-Token": csrf, "Origin": "https://evil.example"},
+        json={"equipment_state": "NOT_DEPLOYED"},
+    )
+
+    assert denied.status_code == 403
+    assert denied.json()["detail"] == "Origin not allowed"
 
 
 def test_session_patch_persists_equipment_state(tmp_path: Path) -> None:
@@ -67,3 +95,11 @@ def test_public_config_does_not_expose_coordinates(tmp_path: Path) -> None:
 
     assert "latitude" not in payload["location"]
     assert "longitude" not in payload["location"]
+
+
+def test_root_serves_existing_forecast_application(tmp_path: Path) -> None:
+    response = client(tmp_path).get("/")
+
+    assert response.status_code == 200
+    assert "Astro-Wolkencheck" in response.text
+    assert response.headers["x-content-type-options"] == "nosniff"
