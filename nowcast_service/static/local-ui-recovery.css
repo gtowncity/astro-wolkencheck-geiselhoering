@@ -1,7 +1,54 @@
+.app-header.awc-unified-header .controls {
+  display: grid !important;
+  grid-template-columns:
+    minmax(210px, 1fr)
+    minmax(210px, 1fr)
+    minmax(300px, 1.25fr)
+    minmax(150px, auto) !important;
+  grid-template-areas:
+    "start end location refresh"
+    "note note note cancel";
+  gap: 9px !important;
+  align-items: end;
+}
+
+.app-header.awc-unified-header .controls > * {
+  position: relative;
+  min-width: 0;
+  max-width: 100%;
+  grid-column: auto !important;
+  z-index: auto;
+}
+
+.app-header.awc-unified-header .controls > .field:nth-child(1) {
+  grid-area: start;
+}
+
+.app-header.awc-unified-header .controls > .field:nth-child(2) {
+  grid-area: end;
+}
+
 .awc-location-control {
   display: grid;
+  grid-area: location;
   min-width: 0;
   gap: 4px;
+  overflow: visible;
+}
+
+#refreshBtn {
+  grid-area: refresh;
+  width: 100%;
+  min-width: 150px;
+  align-self: end;
+  z-index: 2;
+}
+
+#awc-cancel-forecast {
+  grid-area: cancel;
+  width: 100%;
+  align-self: stretch;
+  z-index: 2;
 }
 
 .awc-location-control > label {
@@ -13,22 +60,31 @@
 .awc-location-search-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
+  min-width: 0;
   gap: 6px;
 }
 
 .awc-location-search-row input,
 .awc-location-results {
+  width: 100%;
   min-width: 0;
+  max-width: 100%;
 }
 
 .awc-location-search-row button {
+  position: relative;
+  min-width: max-content;
   white-space: nowrap;
+  z-index: 1;
 }
 
 .awc-location-control small {
+  display: block;
+  min-width: 0;
   color: var(--awc-muted, #a7b5c3);
   font-size: .66rem;
   line-height: 1.35;
+  overflow-wrap: anywhere;
 }
 
 .awc-location-control select[hidden] {
@@ -37,7 +93,8 @@
 
 .awc-forecast-start-note {
   display: grid;
-  grid-column: 1 / -1;
+  grid-area: note;
+  min-width: 0;
   gap: 2px;
   padding: 9px 11px;
   border: 1px solid #385c73;
@@ -45,6 +102,7 @@
   background: #0c1922;
   color: var(--awc-muted, #a7b5c3);
   font-size: .72rem;
+  overflow-wrap: anywhere;
 }
 
 .awc-forecast-start-note strong {
@@ -112,10 +170,16 @@
 @media (max-width: 1100px) {
   .app-header.awc-unified-header .controls {
     grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    grid-template-areas:
+      "start end"
+      "location location"
+      "refresh cancel"
+      "note note";
   }
 
-  .awc-location-control {
-    grid-column: 1 / -1;
+  #refreshBtn,
+  #awc-cancel-forecast {
+    min-width: 0;
   }
 }
 
@@ -136,27 +200,27 @@
 @media (max-width: 680px) {
   .app-header.awc-unified-header .controls {
     grid-template-columns: minmax(0, 1fr) !important;
-  }
-
-  .awc-location-control,
-  .awc-forecast-start-note {
-    grid-column: auto;
+    grid-template-areas:
+      "start"
+      "end"
+      "location"
+      "refresh"
+      "cancel"
+      "note";
   }
 
   .awc-location-search-row {
     grid-template-columns: minmax(0, 1fr);
   }
 
-  .awc-location-search-row button {
+  .awc-location-search-row button,
+  #refreshBtn,
+  #awc-cancel-forecast {
     width: 100%;
+    min-width: 0;
   }
 
   .awc-forecast-start-note {
     font-size: .68rem;
-  }
-
-  .awc-cancel-forecast {
-    grid-column: 1 / -1;
-    width: 100%;
   }
 }
