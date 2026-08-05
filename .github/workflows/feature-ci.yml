@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - feature/dwd-nowcast-v4.3
+      - feature/ui-live-dashboard-v4.3
   workflow_dispatch:
 
 permissions:
