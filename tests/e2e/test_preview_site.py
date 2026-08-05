@@ -17,17 +17,19 @@ def test_preview_is_labeled_and_switches_unified_dashboard_states() -> None:
 
         dashboard = page.locator("#live-dashboard-root")
         axis = page.locator("#awc-live-axis")
+        timeline = page.locator("#awc-timeline-path")
         dashboard.wait_for()
         page.wait_for_function(
             "document.getElementById('awc-api-pill')?.dataset.connection === 'CONNECTED'"
         )
+        timeline.wait_for(state="attached")
 
         banner_text = page.locator("#preview-banner").inner_text()
         assert "DEMO / VISUELLE VORSCHAU" in banner_text
         assert "Keine Live-Sicherheitsdaten" in banner_text
         assert axis.get_attribute("data-tone") == "GREEN"
         assert page.locator("#forecast-preview iframe").count() == 1
-        assert page.locator("#awc-timeline-path").count() == 1
+        assert timeline.count() == 1
         assert "25 validierte Radarframes" in page.locator(
             "#awc-timeline-detail"
         ).inner_text()
