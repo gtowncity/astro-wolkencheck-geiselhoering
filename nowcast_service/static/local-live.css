@@ -1,1 +1,48 @@
-#awc-live-panel{box-sizing:border-box;padding:1rem;border:4px solid currentColor;background:#24262b;color:#fff;font-family:system-ui,sans-serif}#awc-live-panel[data-state="RED"]{background:#6b1010}#awc-live-panel[data-state="YELLOW"]{background:#6b5200}#awc-live-panel[data-state="GREEN"]{background:#145c2b}#awc-live-panel button{margin:.25rem;padding:.65rem}#awc-live-panel pre{white-space:pre-wrap}@media(max-width:600px){#awc-live-panel button{display:block;width:100%}}
+#awc-live-panel {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 1rem clamp(1rem, 3vw, 2rem) 1.25rem;
+  border: 0;
+  border-bottom: 5px solid currentColor;
+  background: #25282d;
+  color: #f7f8fa;
+  font: 500 1rem/1.45 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+#awc-live-panel *, #awc-live-panel *::before, #awc-live-panel *::after { box-sizing: border-box; }
+#awc-live-panel[data-state="RED"] { background: #681515; color: #fff5f5; }
+#awc-live-panel[data-state="YELLOW"] { background: #624d00; color: #fffbed; }
+#awc-live-panel[data-state="GREEN"] { background: #14552b; color: #f1fff5; }
+#awc-live-panel[data-state="UNKNOWN"] { background: #30343b; color: #f7f8fa; }
+.awc-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; }
+.awc-eyebrow { margin: 0 0 .2rem; font-size: .75rem; font-weight: 800; letter-spacing: .12em; }
+#awc-live-title { margin: 0; font-size: clamp(1.3rem, 2.5vw, 2rem); }
+.awc-connection { margin: .1rem 0 0; padding: .35rem .65rem; border: 2px solid currentColor; border-radius: 999px; font-size: .85rem; font-weight: 800; }
+.awc-connection[data-connection="DISCONNECTED"] { border-style: dashed; }
+.awc-action { margin: .9rem 0 1rem; padding: .8rem 1rem; border-left: .55rem solid currentColor; background: rgb(0 0 0 / 22%); font-size: 1.05rem; font-weight: 800; }
+.awc-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 18rem), 1fr)); gap: .75rem; }
+.awc-card { min-width: 0; padding: .85rem; border: 1px solid rgb(255 255 255 / 38%); border-radius: .55rem; background: rgb(0 0 0 / 18%); }
+.awc-card h3 { margin: 0 0 .65rem; font-size: 1rem; }
+.awc-card dl { margin: 0; }
+.awc-card dl > div { display: grid; grid-template-columns: minmax(8rem, 1fr) minmax(7rem, 1.15fr); gap: .6rem; padding: .22rem 0; border-bottom: 1px solid rgb(255 255 255 / 16%); }
+.awc-card dt { font-weight: 650; }
+.awc-card dd { margin: 0; overflow-wrap: anywhere; text-align: right; }
+.awc-detail, .awc-list-empty { margin: .65rem 0 0; color: inherit; opacity: .86; font-size: .88rem; }
+.awc-source-list, .awc-item-list { display: grid; gap: .45rem; }
+.awc-source, .awc-item-list article { display: grid; grid-template-columns: 1fr auto; gap: .2rem .6rem; padding: .5rem .6rem; border: 1px solid rgb(255 255 255 / 22%); border-radius: .4rem; background: rgb(0 0 0 / 14%); }
+.awc-source small, .awc-item-list small { grid-column: 1 / -1; opacity: .85; }
+.awc-source[data-state="FAILED"]::before, .awc-source[data-state="STALE"]::before { content: "⚠"; margin-right: .35rem; }
+.awc-source[data-state="LIVE"]::before { content: "✓"; margin-right: .35rem; }
+.awc-controls { display: flex; flex-wrap: wrap; gap: .55rem; margin-top: 1rem; }
+.awc-controls button, .awc-controls a { min-height: 2.75rem; padding: .65rem .9rem; border: 2px solid currentColor; border-radius: .35rem; background: #fff; color: #111; font: inherit; font-weight: 800; text-decoration: none; cursor: pointer; }
+.awc-controls button:hover, .awc-controls a:hover, .awc-controls button:focus-visible, .awc-controls a:focus-visible { outline: 3px solid #fff; outline-offset: 2px; }
+.awc-controls button:disabled { cursor: not-allowed; opacity: .5; }
+@media (max-width: 700px) {
+  .awc-header { display: block; }
+  .awc-connection { display: inline-block; margin-top: .6rem; }
+  .awc-card dl > div { grid-template-columns: 1fr; gap: 0; }
+  .awc-card dd { text-align: left; }
+  .awc-controls > * { flex: 1 1 100%; text-align: center; }
+}
+@media (prefers-reduced-motion: reduce) {
+  #awc-live-panel * { scroll-behavior: auto !important; transition: none !important; }
+}
