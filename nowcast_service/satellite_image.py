@@ -222,7 +222,8 @@ def _validated_image(content: bytes) -> Image.Image:
         with Image.open(io.BytesIO(content)) as candidate:
             candidate.verify()
         with Image.open(io.BytesIO(content)) as candidate:
-            return candidate.convert("RGB")
+            converted: Image.Image = candidate.convert("RGB")
+            return converted
     except (UnidentifiedImageError, OSError) as exc:
         raise SatelliteImageError("EUMETSAT response is not a valid raster image") from exc
 
