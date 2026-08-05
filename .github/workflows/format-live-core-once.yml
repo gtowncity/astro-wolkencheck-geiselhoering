@@ -31,7 +31,7 @@ jobs:
       - name: Quellen und Tests formatieren
         run: |
           python -m ruff format nowcast_service tests scripts/build_public_site.py
-          python -m ruff check --fix nowcast_service tests scripts/build_public_site.py
+          python -m ruff check --fix --unsafe-fixes nowcast_service tests scripts/build_public_site.py
 
       - name: Einmaligen Workflow entfernen und committen
         shell: bash
