@@ -281,16 +281,32 @@ def create_app(
             media_type="text/css",
         )
 
+    @application.get("/local-live-details.js")
+    def local_live_details_js() -> FileResponse:
+        return FileResponse(
+            PACKAGE_ROOT / "static" / "local-live-details.js",
+            media_type="text/javascript",
+        )
+
+    @application.get("/local-live-details.css")
+    def local_live_details_css() -> FileResponse:
+        return FileResponse(
+            PACKAGE_ROOT / "static" / "local-live-details.css",
+            media_type="text/css",
+        )
+
     @application.get("/")
     def root() -> HTMLResponse:
         content = (PROJECT_ROOT / "index.html").read_text(encoding="utf-8")
         styles = (
             '<link rel="stylesheet" href="/local-live.css">'
             '<link rel="stylesheet" href="/local-live-timeline.css">'
+            '<link rel="stylesheet" href="/local-live-details.css">'
         )
         scripts = (
             '<script src="/local-live.js" defer></script>'
             '<script src="/local-live-timeline.js" defer></script>'
+            '<script src="/local-live-details.js" defer></script>'
         )
         if "</head>" in content:
             content = content.replace("</head>", styles + "</head>", 1)
