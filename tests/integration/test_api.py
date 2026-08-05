@@ -99,6 +99,16 @@ def test_public_config_does_not_expose_coordinates(tmp_path: Path) -> None:
     assert "longitude" not in payload["location"]
 
 
+def test_change_summary_is_empty_before_first_complete_decision(tmp_path: Path) -> None:
+    response = client(tmp_path).get("/api/v1/changes")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["hasPrevious"] is False
+    assert payload["currentSnapshotId"] is None
+    assert payload["meaningfulChangeCount"] == 0
+
+
 def test_root_serves_existing_forecast_application_with_live_assets(tmp_path: Path) -> None:
     response = client(tmp_path).get("/")
 
@@ -112,6 +122,7 @@ def test_root_serves_existing_forecast_application_with_live_assets(tmp_path: Pa
         "/local-live.js",
         "/local-live-timeline.js",
         "/local-live-details.js",
+        "/local-live-changes.js",
         "/local-live-navigation.js",
     ):
         assert asset in response.text
@@ -125,6 +136,7 @@ def test_local_live_enhancement_assets_are_served(tmp_path: Path) -> None:
     timeline_style = test_client.get("/local-live-timeline.css")
     details_script = test_client.get("/local-live-details.js")
     details_style = test_client.get("/local-live-details.css")
+    changes_script = test_client.get("/local-live-changes.js")
     navigation_script = test_client.get("/local-live-navigation.js")
     navigation_style = test_client.get("/local-live-navigation.css")
 
@@ -143,6 +155,11 @@ def test_local_live_enhancement_assets_are_served(tmp_path: Path) -> None:
     assert details_style.status_code == 200
     assert ".awc-alarm-capabilities" in details_style.text
     assert ".awc-hazard-entry" in details_style.text
+
+    assert changes_script.status_code == 200
+    assert changes_script.headers["content-type"].startswith("text/javascript")
+    assert 'fetch(`${API}/changes`' in changes_script.text
+    assert "SERVER_HISTORY" in changes_script.text
 
     assert navigation_script.status_code == 200
     assert navigation_script.headers["content-type"].startswith("text/javascript")
