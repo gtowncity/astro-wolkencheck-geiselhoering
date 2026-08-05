@@ -1,3 +1,14 @@
+.app-header.awc-unified-header .controls > *,
+.app-header.awc-unified-header .field,
+.app-header.awc-unified-header .field input {
+  min-width: 0;
+}
+
+.app-header.awc-unified-header .field input {
+  width: 100%;
+  max-width: 100%;
+}
+
 .awc-warning-facts,
 .awc-hazard-entry dl {
   display: grid;
@@ -58,10 +69,24 @@
 .awc-alarm-capabilities span { display: block; color: var(--awc-faint, #788898); font-size: .62rem; }
 .awc-alarm-capabilities strong { display: block; margin-top: 3px; font-size: .74rem; overflow-wrap: anywhere; }
 .awc-ack-note { display: block; margin-top: 9px; color: var(--awc-muted, #a7b5c3); line-height: 1.45; }
+
 @media (max-width: 640px) {
   .awc-warning-facts,
   .awc-hazard-entry dl,
   .awc-alarm-capabilities { grid-template-columns: 1fr; }
   .awc-warning-facts > div,
   .awc-hazard-entry dl > div { border-right: 0; }
+}
+
+@media (max-width: 520px) {
+  .app-header.awc-unified-header .controls {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+
+  .app-header.awc-unified-header .controls > *,
+  .app-header.awc-unified-header .controls button {
+    width: 100%;
+    max-width: 100%;
+    grid-column: auto !important;
+  }
 }
