@@ -104,25 +104,38 @@ def test_root_serves_existing_forecast_application_with_live_assets(tmp_path: Pa
 
     assert response.status_code == 200
     assert "<title>Astro Wolkencheck - Geiselhöring</title>" in response.text
-    assert '<link rel="stylesheet" href="/local-live.css">' in response.text
-    assert '<link rel="stylesheet" href="/local-live-timeline.css">' in response.text
-    assert '<script src="/local-live.js" defer></script>' in response.text
-    assert '<script src="/local-live-timeline.js" defer></script>' in response.text
+    for asset in (
+        "/local-live.css",
+        "/local-live-timeline.css",
+        "/local-live-details.css",
+        "/local-live.js",
+        "/local-live-timeline.js",
+        "/local-live-details.js",
+    ):
+        assert asset in response.text
     assert response.headers["x-content-type-options"] == "nosniff"
 
 
-def test_local_live_timeline_assets_are_served(tmp_path: Path) -> None:
+def test_local_live_enhancement_assets_are_served(tmp_path: Path) -> None:
     test_client = client(tmp_path)
 
-    script = test_client.get("/local-live-timeline.js")
-    stylesheet = test_client.get("/local-live-timeline.css")
+    timeline_script = test_client.get("/local-live-timeline.js")
+    timeline_style = test_client.get("/local-live-timeline.css")
+    details_script = test_client.get("/local-live-details.js")
+    details_style = test_client.get("/local-live-details.css")
 
-    assert script.status_code == 200
-    assert script.headers["content-type"].startswith("text/javascript")
-    assert "awc-timeline-path" in script.text
-    assert "frame.rainAtSite" in script.text
+    assert timeline_script.status_code == 200
+    assert timeline_script.headers["content-type"].startswith("text/javascript")
+    assert "awc-timeline-path" in timeline_script.text
+    assert "frame.rainAtSite" in timeline_script.text
+    assert timeline_style.status_code == 200
+    assert ".awc-timeline-chart" in timeline_style.text
+    assert '[data-rain="true"]' in timeline_style.text
 
-    assert stylesheet.status_code == 200
-    assert stylesheet.headers["content-type"].startswith("text/css")
-    assert ".awc-timeline-chart" in stylesheet.text
-    assert '[data-rain="true"]' in stylesheet.text
+    assert details_script.status_code == 200
+    assert details_script.headers["content-type"].startswith("text/javascript")
+    assert "awc-warning-facts" in details_script.text
+    assert "awc-test-notification" in details_script.text
+    assert details_style.status_code == 200
+    assert ".awc-alarm-capabilities" in details_style.text
+    assert ".awc-hazard-entry" in details_style.text
