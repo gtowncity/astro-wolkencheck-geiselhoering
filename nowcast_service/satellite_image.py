@@ -95,8 +95,6 @@ _TEXT_FALLBACKS: Final = str.maketrans(
         "ß": "ss",
         "µ": "u",
         "·": "-",
-        "–": "-",
-        "—": "-",
     }
 )
 
