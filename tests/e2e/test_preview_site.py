@@ -18,7 +18,7 @@ def test_preview_is_labeled_and_switches_safety_states() -> None:
         panel = page.locator("#awc-live-panel")
         panel.wait_for()
         assert "DEMO / VISUELLE VORSCHAU" in page.locator("#preview-banner").inner_text()
-        assert "Keine Live-Daten" in page.locator("#preview-banner").inner_text()
+        assert "Keine Live-Sicherheitsdaten" in page.locator("#preview-banner").inner_text()
         assert panel.get_attribute("data-state") == "GREEN"
         assert page.locator("#forecast-preview iframe").count() == 1
 
