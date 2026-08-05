@@ -143,6 +143,21 @@
   align-content: start;
 }
 
+.awc-radar-card .awc-radar-summary {
+  grid-template-columns: minmax(0, 1fr) !important;
+  align-items: start;
+}
+
+.awc-radar-card .awc-radar-summary > *,
+.awc-radar-card .awc-satellite-host,
+.awc-radar-card .awc-satellite-viewer,
+.awc-radar-card #awc-radar-metrics,
+.awc-radar-card .awc-radar-metrics {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+}
+
 .awc-hazard-entry {
   display: block !important;
   min-width: 0;
