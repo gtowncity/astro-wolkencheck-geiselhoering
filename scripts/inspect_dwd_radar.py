@@ -22,11 +22,11 @@ import numpy as np
 from nowcast_service.downloads.remote import DownloadError, DownloadLimits, download_atomic
 from nowcast_service.downloads.safe_tar import UnsafeArchiveError, extract_tar_safely
 from nowcast_service.sources.dwd_directory import (
+    RV_SPEC,
+    WN_SPEC,
     DwdDirectoryClient,
     DwdProductSpec,
     ProductFile,
-    RV_SPEC,
-    WN_SPEC,
 )
 
 
