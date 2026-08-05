@@ -22,7 +22,7 @@ def alert_xml(
     event: str = "STARKES GEWITTER",
     severity: str = "Severe",
     geometry: str = "polygon",
-    expires: str = "2026-08-05T12:00:00Z",
+    expires: str | None = "2026-08-05T12:00:00Z",
 ) -> bytes:
     if geometry == "polygon":
         area = "<polygon>48.70,12.20 48.70,12.60 49.00,12.60 49.00,12.20 48.70,12.20</polygon>"
@@ -32,6 +32,7 @@ def alert_xml(
         area = "<geocode><valueName>WARNCELLID</valueName><value>109278000</value></geocode>"
     else:
         raise AssertionError(geometry)
+    expires_xml = f"<expires>{expires}</expires>" if expires is not None else ""
     return f"""<alert xmlns="{CAP_NS}">
 <identifier>{identifier}</identifier>
 <sender>opendata@dwd.de</sender>
@@ -47,7 +48,7 @@ def alert_xml(
 <severity>{severity}</severity>
 <certainty>Likely</certainty>
 <onset>2026-08-05T06:15:00Z</onset>
-<expires>{expires}</expires>
+{expires_xml}
 <headline>Amtliche Warnung: {event}</headline>
 <area><areaDesc>Testgebiet</areaDesc>{area}</area>
 </info>
@@ -186,6 +187,33 @@ def test_severe_matched_weather_warning_is_red(tmp_path: Path) -> None:
     assert evidence[0].state is RiskState.RED
     assert evidence[0].reason_code == "CAP_RELEVANT_WARNING_RED"
     assert "Amtliche Warnung" in evidence[0].reason
+
+
+def test_missing_expiry_warning_is_active_while_present_in_complete_archive(
+    tmp_path: Path,
+) -> None:
+    archive = make_archive(
+        tmp_path / "open-ended.zip",
+        {
+            "wind.xml": alert_xml(
+                identifier="wind",
+                event="BÖEN",
+                severity="Minor",
+                expires=None,
+            )
+        },
+    )
+
+    result = load_cap_archive(
+        archive,
+        now=NOW,
+        longitude=12.40,
+        latitude=48.84,
+    )
+
+    assert [item.identifier for item in result.snapshot.active] == ["wind"]
+    assert [item.identifier for item in result.location.matched] == ["wind"]
+    assert cap_hazard_evidence(result)[0].state is RiskState.YELLOW
 
 
 def test_moderate_weather_warning_is_yellow_and_fog_is_not_hardware_hazard(
