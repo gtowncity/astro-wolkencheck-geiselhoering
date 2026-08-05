@@ -103,7 +103,13 @@ def create_app(
 
     @application.get("/runtime-config.json")
     def runtime_config() -> dict[str, object]:
-        return {"mode": "LOCAL", "localApiAvailable": True, "apiBase": "/api/v1"}
+        return {
+            "mode": "LOCAL",
+            "localApiAvailable": True,
+            "apiBase": "/api/v1",
+            "browserAudioEnabled": config.alerts.browser_audio_enabled,
+            "browserNotificationsEnabled": config.alerts.browser_notifications_enabled,
+        }
 
     @application.get("/api/v1/meta")
     def meta() -> dict[str, object]:
