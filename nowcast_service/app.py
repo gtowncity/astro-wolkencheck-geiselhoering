@@ -21,6 +21,7 @@ from nowcast_service.runtime.change_summary import (
     recent_change_summary,
 )
 from nowcast_service.runtime.coordinator import RuntimeCoordinator
+from nowcast_service.satellite_image import SatelliteImageError, SatelliteImageService
 from nowcast_service.security import CSRF_COOKIE, new_csrf_token, require_csrf
 from nowcast_service.sources.runtime_base import SourceRunner
 
@@ -33,6 +34,7 @@ STYLE_ASSETS = (
     "local-live-details.css",
     "local-live-navigation.css",
     "local-ui-recovery.css",
+    "local-satellite-viewer.css",
 )
 SCRIPT_ASSETS = (
     "local-live.js",
@@ -41,6 +43,7 @@ SCRIPT_ASSETS = (
     "local-live-changes.js",
     "local-live-navigation.js",
     "local-ui-recovery.js",
+    "local-satellite-viewer.js",
 )
 LOCAL_ASSETS = {
     **{name: "text/css" for name in STYLE_ASSETS},
@@ -69,6 +72,16 @@ class SessionPatch(BaseModel):
 
 def utc_now() -> str:
     return datetime.now(UTC).isoformat().replace("+00:00", "Z")
+
+
+def _parse_utc(value: str) -> datetime:
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="Invalid satellite time") from exc
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=UTC)
+    return parsed.astimezone(UTC)
 
 
 def _prepare_local_index(content: str) -> str:
@@ -124,6 +137,7 @@ def create_app(
         data_dir=config_store.data_dir,
         source_runners=runners,
     )
+    satellite_service = SatelliteImageService(config_store.data_dir)
 
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
@@ -150,6 +164,7 @@ def create_app(
     application.state.config_store = config_store
     application.state.coordinator = coordinator
     application.state.runtime = coordinator
+    application.state.satellite_service = satellite_service
 
     @application.middleware("http")
     async def add_security_headers(
@@ -160,7 +175,7 @@ def create_app(
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["Referrer-Policy"] = "no-referrer"
         response.headers["Permissions-Policy"] = (
-            "geolocation=(self), microphone=(), camera=()"
+            "geolocation=(self), microphone=(), camera=(), fullscreen=(self)"
         )
         response.headers["Content-Security-Policy"] = (
             "default-src 'self' https: data: blob:; "
@@ -316,6 +331,74 @@ def create_app(
                 status_code=503,
                 detail="Decision history unavailable",
             ) from exc
+
+    @application.get("/api/v1/satellite/meta")
+    async def satellite_meta(product: str = "geocolour") -> dict[str, object]:
+        try:
+            payload = await satellite_service.metadata(product)
+        except SatelliteImageError as exc:
+            raise HTTPException(
+                status_code=503,
+                detail="EUMETSAT satellite metadata unavailable",
+            ) from exc
+        payload["location"] = {
+            "name": config.location.name,
+            "latitude": config.location.latitude,
+            "longitude": config.location.longitude,
+        }
+        return payload
+
+    @application.get("/api/v1/satellite/image")
+    async def satellite_image(
+        product: str = "geocolour",
+        time: str | None = None,
+        latitude: float | None = None,
+        longitude: float | None = None,
+        location_name: str | None = None,
+    ) -> Response:
+        try:
+            observed_at: datetime
+            if time is None:
+                metadata = await satellite_service.metadata(product)
+                frames = metadata.get("frames")
+                if not isinstance(frames, list) or not frames:
+                    raise SatelliteImageError("No satellite frames are available")
+                observed_at = _parse_utc(str(frames[-1]))
+            else:
+                observed_at = _parse_utc(time)
+            result = await satellite_service.render(
+                product_key=product,
+                observed_at=observed_at,
+                latitude=latitude if latitude is not None else config.location.latitude,
+                longitude=longitude if longitude is not None else config.location.longitude,
+                location_name=location_name or config.location.name,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except SatelliteImageError as exc:
+            raise HTTPException(
+                status_code=503,
+                detail="EUMETSAT satellite image unavailable",
+            ) from exc
+
+        age_minutes = max(
+            0.0,
+            (datetime.now(UTC) - result.observed_at).total_seconds() / 60,
+        )
+        return Response(
+            content=result.png,
+            media_type="image/png",
+            headers={
+                "X-Satellite-Provider": "EUMETSAT",
+                "X-Satellite-Product": result.product.key,
+                "X-Satellite-Observation-Time": result.observed_at.isoformat().replace(
+                    "+00:00", "Z"
+                ),
+                "X-Satellite-Age-Minutes": f"{age_minutes:.1f}",
+                "X-Satellite-Fresh": "true" if age_minutes <= 20 else "false",
+                "X-Satellite-Cache": "HIT" if result.cached else "MISS",
+            },
+        )
 
     @application.get("/api/v1/config/public")
     def public_config() -> dict[str, object]:
