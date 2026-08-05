@@ -76,17 +76,19 @@ def test_satellite_viewer_boots_without_forecast_shell() -> None:
         )
         page.route("**/*", route_request)
         page.set_content(
-            "<!doctype html><html><body>"
+            "<!doctype html><html><head>"
+            "<base href='http://awc.test/'>"
+            "</head><body>"
             "<div class='awc-radar-visual'></div>"
             "</body></html>"
         )
         page.add_script_tag(content=SCRIPT.read_text(encoding="utf-8"))
-        page.wait_for_timeout(500)
+        page.locator("#awc-satellite-image").wait_for(state="attached")
+        page.wait_for_function(
+            "document.getElementById('awc-satellite-image').complete && "
+            "document.getElementById('awc-satellite-image').naturalWidth > 0"
+        )
 
-        assert page.locator("#awc-satellite-image").count() == 1, (
-            f"page errors={errors}; console={console}"
-        )
-        assert page.locator("#awc-satellite-image").evaluate(
-            "node => node.complete && node.naturalWidth > 0"
-        )
+        assert errors == []
+        assert console == []
         browser.close()
