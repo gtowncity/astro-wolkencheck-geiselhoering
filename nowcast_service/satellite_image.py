@@ -552,9 +552,7 @@ class SatelliteImageService:
         product: SatelliteProduct,
         frame: SatelliteFrame,
     ) -> Path:
-        digest = hashlib.sha256(
-            f"{product.key}:{frame.iso()}".encode("utf-8")
-        ).hexdigest()[:20]
+        digest = hashlib.sha256(f"{product.key}:{frame.iso()}".encode()).hexdigest()[:20]
         return self._cache_dir / "frames" / f"{product.key}-{digest}.png"
 
     @staticmethod
