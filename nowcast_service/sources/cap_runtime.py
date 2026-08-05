@@ -105,12 +105,12 @@ class CapSourceRunner:
                         latitude=self._config.location.latitude,
                         resolver=self._warning_index,
                     )
-                    unresolved = tuple(
-                        alert
-                        for alert in result.location.unresolved
-                        if alert.german_info() is not None
-                        and alert.german_info().is_in_force(evaluated_at)
-                    )
+                    unresolved_list = []
+                    for alert in result.location.unresolved:
+                        info = alert.german_info()
+                        if info is not None and info.is_in_force(evaluated_at):
+                            unresolved_list.append(alert)
+                    unresolved = tuple(unresolved_list)
                     if unresolved:
                         raise SourceRunError(
                             "CAP_LOCATION_UNRESOLVED",
