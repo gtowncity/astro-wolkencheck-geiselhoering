@@ -213,6 +213,20 @@
 }
 
 @media (max-width: 680px) {
+  html,
+  body,
+  .app,
+  .app-header,
+  #overviewContent,
+  #live-dashboard-root,
+  .awc-live-grid,
+  .awc-card,
+  .awc-radar-summary,
+  .awc-radar-visual {
+    min-width: 0;
+    max-width: 100%;
+  }
+
   .app-header.awc-unified-header .controls {
     grid-template-columns: minmax(0, 1fr) !important;
     grid-template-areas:
@@ -222,6 +236,27 @@
       "refresh"
       "cancel"
       "note";
+  }
+
+  #overviewContent .decision-hero,
+  .decision-hero {
+    grid-template-columns: minmax(0, 1fr) !important;
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  #overviewContent .decision-facts,
+  .decision-facts {
+    grid-template-columns: minmax(0, 1fr) !important;
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .decision-facts > div {
+    min-width: 0;
+    border-left: 0;
+    border-top: 1px solid var(--awc-border, #2b3a4b);
+    overflow-wrap: anywhere;
   }
 
   .awc-location-search-row {
