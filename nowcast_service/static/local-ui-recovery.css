@@ -1,0 +1,98 @@
+.awc-forecast-start-note {
+  display: grid;
+  grid-column: 1 / -1;
+  gap: 2px;
+  padding: 9px 11px;
+  border: 1px solid #385c73;
+  border-radius: var(--awc-radius-small, 7px);
+  background: #0c1922;
+  color: var(--awc-muted, #a7b5c3);
+  font-size: .72rem;
+}
+
+.awc-forecast-start-note strong {
+  color: var(--awc-text, #edf3f8);
+}
+
+.awc-cancel-forecast {
+  border-color: rgba(225, 106, 118, .55);
+  background: #21151a;
+  color: #f2a4ac;
+}
+
+.awc-cancel-forecast[hidden] {
+  display: none !important;
+}
+
+.awc-forecast-placeholder {
+  min-height: 0;
+  border-left-color: var(--awc-info, #69add9);
+}
+
+.awc-forecast-placeholder.warn {
+  border-left-color: var(--awc-yellow, #dfb44f);
+}
+
+.awc-forecast-placeholder.bad {
+  border-left-color: var(--awc-red, #e16a76);
+}
+
+.awc-live-grid {
+  align-items: start;
+}
+
+.awc-main-stack {
+  display: grid;
+  min-width: 0;
+  gap: var(--awc-gap, 10px);
+  align-content: start;
+}
+
+.awc-hazard-entry {
+  display: block !important;
+  min-width: 0;
+}
+
+.awc-hazard-entry > strong {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.awc-hazard-entry dl,
+.awc-side-stack .awc-alarm-capabilities {
+  grid-template-columns: 1fr;
+}
+
+.awc-hazard-entry dl > div,
+.awc-side-stack .awc-alarm-capabilities > div {
+  border-right: 0;
+}
+
+.awc-side-stack .awc-button-row > * {
+  flex: 1 1 150px;
+}
+
+@media (max-width: 980px) {
+  .awc-main-stack,
+  .awc-side-stack {
+    display: contents;
+  }
+
+  .awc-radar-card { order: 1; }
+  .awc-warnings-card { order: 2; }
+  .awc-sources-card { order: 3; }
+  .awc-hazard-card { order: 4; }
+  .awc-change-card { order: 5; }
+  .awc-alarm-card { order: 6; }
+}
+
+@media (max-width: 680px) {
+  .awc-forecast-start-note {
+    font-size: .68rem;
+  }
+
+  .awc-cancel-forecast {
+    grid-column: 1 / -1;
+    width: 100%;
+  }
+}
