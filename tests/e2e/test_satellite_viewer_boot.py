@@ -6,7 +6,7 @@ from urllib.parse import urlparse
 
 import pytest
 from PIL import Image
-from playwright.sync_api import ConsoleMessage, Error, Route, sync_playwright
+from playwright.sync_api import Route, sync_playwright
 
 pytestmark = pytest.mark.e2e
 
