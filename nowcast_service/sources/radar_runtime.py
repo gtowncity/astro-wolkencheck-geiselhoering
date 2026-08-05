@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import asyncio
+import ssl
 import tempfile
 from datetime import timedelta
 from pathlib import Path
 from typing import Any
 
 import httpx
+import truststore
 
 from nowcast_service.config import AppConfig
 from nowcast_service.decision_engine import SourceState
@@ -40,11 +42,18 @@ class RadarSourceRunner:
 
         errors: list[str] = []
         timeout = httpx.Timeout(30.0, connect=10.0)
-        async with httpx.AsyncClient(timeout=timeout, trust_env=False) as client:
+        tls_context = truststore.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+        async with httpx.AsyncClient(
+            timeout=timeout,
+            trust_env=False,
+            verify=tls_context,
+        ) as client:
             try:
                 candidates = await DwdDirectoryClient(client).candidates(RV_SPEC)
             except Exception as exc:
-                raise SourceRunError("RADAR_DIRECTORY_FAILED", type(exc).__name__) from exc
+                raise SourceRunError(
+                    "RADAR_DIRECTORY_FAILED", f"{type(exc).__name__}: {exc}"
+                ) from exc
             for candidate in candidates[:5]:
                 try:
                     downloaded = await download_atomic(
