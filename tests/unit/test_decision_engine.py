@@ -94,7 +94,8 @@ def test_green_requires_healthy_core_sources_and_no_hazard() -> None:
 
 
 def test_optional_disabled_source_does_not_degrade_data_quality() -> None:
-    sources = core_sources() + (
+    sources = (
+        *core_sources(),
         SourceHealth(
             source="RAIN_SENSOR",
             required=False,
@@ -114,7 +115,8 @@ def test_optional_disabled_source_does_not_degrade_data_quality() -> None:
 
 
 def test_failed_supporting_source_degrades_but_does_not_block_green() -> None:
-    sources = core_sources() + (
+    sources = (
+        *core_sources(),
         SourceHealth(
             source="DWD_WN",
             required=False,
