@@ -1,3 +1,5 @@
+from types import SimpleNamespace
+
 from nowcast_service.sources.radar_analysis import (
     RadarFrameAnalysis,
     RainComponent,
@@ -92,4 +94,25 @@ def test_frame_payload_keeps_missing_component_explicit() -> None:
     assert payload["nearestDirection"] is None
     assert payload["componentAreaKm2"] is None
     assert payload["componentMaximumMm5Min"] is None
+    assert payload["rings"] == []
+
+
+def test_optional_timeline_statistics_cannot_invalidate_safety_payload() -> None:
+    frame = SimpleNamespace(
+        lead_minutes=0,
+        nearest_component=SimpleNamespace(
+            nearest_distance_km=12.5,
+            nearest_bearing_deg=91.0,
+            area_km2=8.0,
+        ),
+        site_maximum_mm_5min=0.0,
+    )
+
+    payload = _frame_payload(frame)
+
+    assert payload["leadMinutes"] == 0
+    assert payload["nearestDistanceKm"] == 12.5
+    assert payload["nearestDirection"] == "E"
+    assert payload["componentMaximumMm5Min"] is None
+    assert payload["coverageSufficient"] is None
     assert payload["rings"] == []
