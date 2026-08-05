@@ -175,6 +175,13 @@
     }
   }
 
+  window.AstroWolkencheckLiveChanges = Object.freeze({
+    render,
+    refresh,
+    summaryLines,
+    introCopy,
+  });
+
   function init() {
     const root = document.getElementById("live-dashboard-root");
     if (!root) {
