@@ -46,7 +46,7 @@ def change_summary() -> dict[str, object]:
     }
 
 
-def test_server_history_replaces_browser_only_change_copy() -> None:
+def test_server_history_replaces_and_survives_browser_change_copy() -> None:
     def route_request(route: Route) -> None:
         path = urlparse(route.request.url).path
         if path == "/api/v1/changes":
@@ -100,4 +100,19 @@ def test_server_history_replaces_browser_only_change_copy() -> None:
         assert "Neu: Amtliche Warnung vor Gewitter" in copy
         assert "Amtliche DWD-Warnungen: LIVE → STALE" in copy
         assert "Nur im Browser" not in copy
+
+        page.evaluate(
+            """
+            const list = document.getElementById('awc-change-list');
+            const item = document.createElement('li');
+            item.textContent = 'Späterer Browser-Vergleich überschreibt die Historie.';
+            list.replaceChildren(item);
+            """
+        )
+        page.wait_for_function(
+            "document.getElementById('awc-change-list').innerText.includes('GREEN → YELLOW')"
+        )
+        assert "Späterer Browser-Vergleich" not in page.locator(
+            "#awc-change-list"
+        ).inner_text()
         browser.close()
