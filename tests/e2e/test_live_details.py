@@ -235,7 +235,7 @@ def fulfill_route(route: Route, current: dict[str, object]) -> None:
         )
 
 
-def test_warning_latch_and_alarm_details_are_structured() -> None:
+def test_warning_latch_alarm_and_accessible_announcements() -> None:
     current: dict[str, object] = {"snapshot": make_snapshot()}
 
     with sync_playwright() as playwright:
@@ -247,6 +247,14 @@ def test_warning_latch_and_alarm_details_are_structured() -> None:
         page.locator(".awc-warning-facts").wait_for(state="attached")
         page.locator("#awc-warning-list details summary").first.click()
         page.locator(".awc-warning-facts").wait_for(state="visible")
+
+        urgent = page.locator("#awc-urgent-announcement")
+        polite = page.locator("#awc-polite-announcement")
+        assert urgent.get_attribute("role") == "alert"
+        assert urgent.get_attribute("aria-atomic") == "true"
+        assert polite.get_attribute("role") == "status"
+        assert polite.get_attribute("aria-live") == "polite"
+        assert page.locator("#awc-action-card").get_attribute("aria-live") == "off"
 
         warning_text = page.locator(".awc-warning-facts").inner_text()
         assert "Dringlichkeit" in warning_text
@@ -264,6 +272,11 @@ def test_warning_latch_and_alarm_details_are_structured() -> None:
             make_snapshot(red=True),
         )
         page.locator(".awc-hazard-entry").wait_for()
+        page.wait_for_function(
+            "document.getElementById('awc-urgent-announcement').innerText.includes('Rot')"
+        )
+        assert "Ausrüstung sofort schützen" in urgent.inner_text()
+
         hazard_text = page.locator(".awc-hazard-entry").inner_text()
         assert "1 von 2 frischen Zyklen" in hazard_text
         assert "Mindesthaltezeit" in hazard_text
@@ -271,6 +284,16 @@ def test_warning_latch_and_alarm_details_are_structured() -> None:
         assert "niemals die erkannte Gefahr" in page.locator(
             "#awc-ack-note"
         ).inner_text()
-        no_overflow = "document.documentElement.scrollWidth <= document.documentElement.clientWidth"
+
+        page.evaluate("window.__events.emit('error', new Event('error'))")
+        page.wait_for_function(
+            "document.getElementById('awc-urgent-announcement').innerText.includes('unterbrochen')"
+        )
+        assert "Sicherheitslage unbekannt" in urgent.inner_text()
+
+        no_overflow = (
+            "document.documentElement.scrollWidth <= "
+            "document.documentElement.clientWidth"
+        )
         assert page.evaluate(no_overflow)
         browser.close()
