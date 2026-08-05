@@ -41,45 +41,15 @@ def radar_timeline(*, approaching: bool) -> list[dict[str, object]]:
     return frames
 
 
-def warning_items(*, red: bool) -> list[dict[str, object]]:
-    if red:
-        return [
-            {
-                "identifier": "storm",
-                "event": "SCHWERES GEWITTER",
-                "headline": "Amtliche Warnung vor schwerem Gewitter",
-                "severity": "Severe",
-                "expires": "2026-08-05T10:00:00Z",
-                "description": "Schweres Gewitter am Standort möglich.",
-                "instruction": "Ausrüstung sofort schützen.",
-            }
-        ]
-    return [
-        {
-            "identifier": identifier,
-            "event": event,
-            "headline": headline,
-            "severity": severity,
-            "expires": "2026-08-05T17:00:00Z",
-            "description": "Wärmebelastung.",
-            "instruction": "Direkte Sonne meiden.",
-        }
-        for identifier, event, headline, severity in (
-            ("heat-extreme", "EXTREME HITZE", "Warnung vor extremer Hitze", "Severe"),
-            ("heat", "HITZE", "Warnung vor Hitze", "Moderate"),
-        )
-    ]
-
-
-def source_snapshot(
+def source(
     source_id: str,
     *,
+    payload: dict[str, object],
     state: str = "LIVE",
-    age_seconds: int = 0,
+    age_seconds: int = 30,
     complete: bool = True,
     stale_after: int = 900,
     invalid_after: int = 1800,
-    payload: dict[str, object] | None = None,
 ) -> dict[str, object]:
     return {
         "sourceId": source_id,
@@ -88,12 +58,40 @@ def source_snapshot(
         "isComplete": complete,
         "staleAfterSeconds": stale_after,
         "invalidAfterSeconds": invalid_after,
-        "payload": payload or {},
+        "payload": payload,
     }
 
 
-def radar_source(*, red: bool) -> dict[str, object]:
-    payload: dict[str, object] = {
+def warnings(*, red: bool) -> list[dict[str, object]]:
+    if red:
+        return [
+            {
+                "identifier": "storm",
+                "event": "SCHWERES GEWITTER",
+                "headline": "Amtliche Warnung vor schwerem Gewitter",
+                "severity": "Severe",
+                "description": "Schweres Gewitter am Standort möglich.",
+                "instruction": "Ausrüstung sofort schützen.",
+            }
+        ]
+    return [
+        {
+            "identifier": "heat-extreme",
+            "event": "EXTREME HITZE",
+            "headline": "Warnung vor extremer Hitze",
+            "severity": "Severe",
+        },
+        {
+            "identifier": "heat",
+            "event": "HITZE",
+            "headline": "Warnung vor Hitze",
+            "severity": "Moderate",
+        },
+    ]
+
+
+def snapshot(*, red: bool) -> dict[str, object]:
+    radar_payload: dict[str, object] = {
         "cycleTime": "2026-08-05T08:55:00Z",
         "frameCount": 25,
         "forecastHorizonMinutes": 120,
@@ -120,18 +118,6 @@ def radar_source(*, red: bool) -> dict[str, object]:
         "coverage0To120": True,
         "frameTimeline": radar_timeline(approaching=red),
     }
-    result = source_snapshot("DWD_RV", age_seconds=45, payload=payload)
-    result.update(
-        {
-            "cycleTime": "2026-08-05T08:55:00Z",
-            "validUntil": "2026-08-05T09:25:00Z",
-        }
-    )
-    return result
-
-
-def make_snapshot(state: str, snapshot_id: str) -> dict[str, object]:
-    red = state == "RED"
     hazards: list[dict[str, object]] = []
     if red:
         hazards.append(
@@ -147,16 +133,9 @@ def make_snapshot(state: str, snapshot_id: str) -> dict[str, object]:
                 "clearCyclesRequired": 2,
             }
         )
-    cap = source_snapshot(
-        "DWD_CAP",
-        age_seconds=60,
-        stale_after=1200,
-        invalid_after=2700,
-        payload={"active": warning_items(red=red)},
-    )
-    cap["validUntil"] = "2026-08-05T09:45:00Z"
+    state = "RED" if red else "GREEN"
     return {
-        "snapshotId": snapshot_id,
+        "snapshotId": state.lower(),
         "evaluationAt": "2026-08-05T09:00:00Z",
         "algorithmVersion": "safety-1.0.0",
         "configurationVersion": "1",
@@ -175,20 +154,28 @@ def make_snapshot(state: str, snapshot_id: str) -> dict[str, object]:
             "LOCAL_PERSISTENCE": "LIVE",
         },
         "sources": [
-            radar_source(red=red),
-            cap,
-            source_snapshot(
+            source("DWD_RV", payload=radar_payload),
+            source(
+                "DWD_CAP",
+                payload={"active": warnings(red=red)},
+                stale_after=1200,
+                invalid_after=2700,
+            ),
+            source(
                 "LOCAL_PERSISTENCE",
+                payload={},
                 stale_after=86400,
                 invalid_after=172800,
             ),
-            source_snapshot(
+            source(
                 "DWD_WN",
+                payload={},
                 state="NOT_AVAILABLE",
                 complete=False,
             ),
-            source_snapshot(
+            source(
                 "RAIN_SENSOR",
+                payload={},
                 state="DISABLED",
                 complete=False,
                 stale_after=60,
@@ -218,13 +205,18 @@ def html_shell() -> str:
       <button class='tab-button' data-tab='windows'>Beste Zeiten</button>
       <button class='tab-button' data-tab='hours'>Stunden</button>
       <button class='tab-button' data-tab='data'>Daten</button>
-      <select id='mobileTabSelect'><option value='overview'>Übersicht</option></select>
+      <select id='mobileTabSelect'>
+        <option value='overview'>Übersicht</option>
+      </select>
     </nav>
     <section id='overviewContent'>
       <article class='decision-hero warn'>
         <h2>Nur unter Vorbehalt</h2>
         <div class='decision-facts'>
-          <div><span>Größtes Risiko</span><strong>Forecast nur mittel sicher</strong></div>
+          <div>
+            <span>Größtes Risiko</span>
+            <strong>Forecast nur mittel sicher</strong>
+          </div>
           <div><span>Sicherheit</span><strong>mittel · 62/100</strong></div>
         </div>
       </article>
@@ -244,7 +236,9 @@ def install_browser_doubles(page: Page) -> None:
         class FakeNotification {
           static permission = 'granted';
           static async requestPermission() { return 'granted'; }
-          constructor(title, options) { window.__notifications.push({title, options}); }
+          constructor(title, options) {
+            window.__notifications.push({title, options});
+          }
         }
         Object.defineProperty(window, 'Notification', {
           value: FakeNotification,
@@ -303,11 +297,11 @@ def install_browser_doubles(page: Page) -> None:
     )
 
 
-def fulfill_api(route: Route, api_state: dict[str, object]) -> None:
+def fulfill(route: Route, state: dict[str, object]) -> None:
     request = route.request
     path = urlparse(request.url).path
     if request.method in {"POST", "PATCH"}:
-        writes = api_state["writes"]
+        writes = state["writes"]
         assert isinstance(writes, list)
         writes.append((request.method, path))
         route.fulfill(status=200, content_type="application/json", body="{}")
@@ -349,7 +343,7 @@ def fulfill_api(route: Route, api_state: dict[str, object]) -> None:
         route.fulfill(
             status=200,
             content_type="application/json",
-            body=json.dumps(api_state["snapshot"]),
+            body=json.dumps(state["snapshot"]),
         )
     elif path == "/api/v1/alerts":
         route.fulfill(
@@ -365,9 +359,9 @@ def fulfill_api(route: Route, api_state: dict[str, object]) -> None:
         )
 
 
-def test_redesign_dashboard_safety_timeline_and_mobile_layout() -> None:
-    api_state: dict[str, object] = {
-        "snapshot": make_snapshot("GREEN", "green"),
+def test_live_dashboard_green_red_actions_and_mobile_layout() -> None:
+    state: dict[str, object] = {
+        "snapshot": snapshot(red=False),
         "writes": [],
     }
 
@@ -375,7 +369,7 @@ def test_redesign_dashboard_safety_timeline_and_mobile_layout() -> None:
         browser = playwright.chromium.launch()
         page = browser.new_page(viewport={"width": 1165, "height": 768})
         install_browser_doubles(page)
-        page.route("**/*", lambda route: fulfill_api(route, api_state))
+        page.route("**/*", lambda route: fulfill(route, state))
         page.goto("http://awc.test/")
         page.locator("#awc-timeline-path").wait_for(state="attached")
 
@@ -384,16 +378,23 @@ def test_redesign_dashboard_safety_timeline_and_mobile_layout() -> None:
         assert page.locator("#awc-data-title").inner_text() == "Live-Daten vollständig"
         warning_text = page.locator("#awc-warning-list").inner_text()
         assert warning_text.count("Keine direkte Hardware-Sperre") == 2
-        assert "Fläche entfernt sich" in page.locator("#awc-timeline-summary").inner_text()
+        assert "Fläche entfernt sich" in page.locator(
+            "#awc-timeline-summary"
+        ).inner_text()
         assert "25 validierte Radarframes" in page.locator(
             "#awc-timeline-detail"
         ).inner_text()
-        no_overflow = "document.documentElement.scrollWidth <= document.documentElement.clientWidth"
-        assert page.evaluate(no_overflow)
 
         page.locator("#awc-set-equipment").click()
-        page.locator(".awc-equipment-option").first.click()
-        writes = api_state["writes"]
+        with page.expect_request(
+            lambda request: (
+                request.method == "PATCH"
+                and urlparse(request.url).path == "/api/v1/session"
+            )
+        ):
+            page.locator(".awc-equipment-option").first.click()
+
+        writes = state["writes"]
         assert isinstance(writes, list)
         assert ("PATCH", "/api/v1/session") in writes
 
@@ -402,7 +403,7 @@ def test_redesign_dashboard_safety_timeline_and_mobile_layout() -> None:
         page.wait_for_function("window.__toneStarts >= 2")
         page.evaluate("window.__notifications = []")
 
-        red = make_snapshot("RED", "red")
+        red = snapshot(red=True)
         page.evaluate("payload => window.__events.emit('snapshot', payload)", red)
         page.evaluate(
             "payload => window.__events.emit('alert', payload)",
@@ -416,17 +417,32 @@ def test_redesign_dashboard_safety_timeline_and_mobile_layout() -> None:
         )
         page.wait_for_function("window.__notifications.length === 1")
         assert page.locator("#awc-live-axis").get_attribute("data-tone") == "RED"
-        assert "Hardware-Relevanz: ROT" in page.locator("#awc-warning-list").inner_text()
+        assert "Hardware-Relevanz: ROT" in page.locator(
+            "#awc-warning-list"
+        ).inner_text()
         assert page.locator("#awc-hazard-card").is_visible()
-        page.locator("#awc-ack").click()
+
+        with page.expect_request(
+            lambda request: (
+                request.method == "POST"
+                and urlparse(request.url).path == "/api/v1/alerts/acknowledge"
+            )
+        ):
+            page.locator("#awc-ack").click()
         assert ("POST", "/api/v1/alerts/acknowledge") in writes
 
         page.set_viewport_size({"width": 390, "height": 844})
+        no_overflow = (
+            "document.documentElement.scrollWidth <= "
+            "document.documentElement.clientWidth"
+        )
         assert page.evaluate(no_overflow)
         assert page.locator("#awc-radar-metrics").is_visible()
         page.evaluate("window.__events.emit('error', new Event('error'))")
         assert page.locator("#awc-live-axis").get_attribute("data-tone") == "UNKNOWN"
-        assert page.locator("#awc-api-pill").get_attribute("data-connection") == "DISCONNECTED"
+        assert page.locator("#awc-api-pill").get_attribute("data-connection") == (
+            "DISCONNECTED"
+        )
         browser.close()
 
 
