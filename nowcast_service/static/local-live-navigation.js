@@ -74,6 +74,7 @@
       return false;
     }
 
+    const firstConfiguration = !initialized;
     const buttons = new Map(
       [...tabs.querySelectorAll(".tab-button[data-tab]")].map((button) => [
         button.dataset.tab,
@@ -124,7 +125,7 @@
     windowsPanel.hidden = true;
     windowsPanel.classList.remove("active");
 
-    if (!initialized) {
+    if (firstConfiguration) {
       for (const button of [nowButton, overviewButton, hoursButton, dataButton]) {
         button.addEventListener("click", () => activateTab(button.dataset.tab));
       }
@@ -140,7 +141,12 @@
       // The first tab remains JETZT when session storage is unavailable.
     }
     const currentlyActive = document.querySelector(".tab-button.active")?.dataset.tab;
-    activateTab(TAB_LABELS[currentlyActive] ? currentlyActive : initialTab);
+    const target = firstConfiguration
+      ? initialTab
+      : TAB_LABELS[currentlyActive]
+        ? currentlyActive
+        : initialTab;
+    activateTab(target);
     return true;
   }
 
