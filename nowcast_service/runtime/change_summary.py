@@ -130,8 +130,9 @@ def load_recent_complete_decisions(
     if not path.exists():
         return ()
     try:
-        connection = sqlite3.connect(f"file:{path}?mode=ro", uri=True, timeout=5.0)
+        connection = sqlite3.connect(path, timeout=5.0)
         try:
+            connection.execute("PRAGMA query_only = ON")
             rows = connection.execute(
                 """
                 SELECT payload_json
