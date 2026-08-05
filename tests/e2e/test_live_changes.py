@@ -1,9 +1,8 @@
 import json
 from pathlib import Path
-from urllib.parse import urlparse
 
 import pytest
-from playwright.sync_api import Route, sync_playwright
+from playwright.sync_api import sync_playwright
 
 pytestmark = pytest.mark.e2e
 
@@ -63,36 +62,29 @@ def change_summary() -> dict[str, object]:
 
 
 def test_server_history_replaces_and_survives_browser_change_copy() -> None:
-    def route_request(route: Route) -> None:
-        path = urlparse(route.request.url).path
-        if path == "/":
-            route.fulfill(status=200, content_type="text/html", body=PAGE)
-        elif path == "/api/v1/changes":
-            route.fulfill(
-                status=200,
-                content_type="application/json",
-                body=json.dumps(change_summary()),
-            )
-        else:
-            route.fulfill(status=404, body="not found")
+    summary_json = json.dumps(change_summary())
 
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch()
         page = browser.new_page()
-        page.route("**/*", route_request)
-        page.goto("http://awc.test/")
+        page.set_content(PAGE)
         page.add_script_tag(
-            content="""
-            window.AstroWolkencheckLiveDashboard = {
-              getState() {
-                return {
-                  snapshot: {
+            content=f"""
+            const summary = {summary_json};
+            window.fetch = async () => new Response(JSON.stringify(summary), {{
+              status: 200,
+              headers: {{'Content-Type': 'application/json'}},
+            }});
+            window.AstroWolkencheckLiveDashboard = {{
+              getState() {{
+                return {{
+                  snapshot: {{
                     snapshotId: 'current',
-                    hardwareRisk: {dataQuality: 'COMPLETE'},
-                  },
-                };
-              },
-            };
+                    hardwareRisk: {{dataQuality: 'COMPLETE'}},
+                  }},
+                }};
+              }},
+            }};
             """
         )
         page.add_script_tag(content=SCRIPT.read_text(encoding="utf-8"))
