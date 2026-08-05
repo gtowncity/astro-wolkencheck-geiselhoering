@@ -1,0 +1,44 @@
+name: Live Satellite Smoke
+
+on:
+  push:
+    branches:
+      - feature/forecast-loading-layout-v4.3
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: live-satellite-smoke-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  eumetsat-live:
+    name: Fresh EUMETSAT MTG imagery
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: python -m pip install --upgrade pip
+      - run: python -m pip install -e ".[dev]"
+      - name: Inspect real EUMETSAT frames
+        run: >-
+          python scripts/inspect_eumetsat_satellite.py
+          --maximum-age-minutes 20
+          --minimum-products 2
+          --report-output satellite-smoke-report.json
+          --image-output satellite-smoke-bavaria.png
+      - name: Upload real satellite evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: eumetsat-satellite-smoke
+          path: |
+            satellite-smoke-report.json
+            satellite-smoke-bavaria.png
+          if-no-files-found: warn
