@@ -1,4 +1,4 @@
-"""Live structure smoke test for current DWD CAP status archives."""
+"""Live structure and semantic smoke test for current DWD CAP status archives."""
 
 from __future__ import annotations
 
@@ -16,6 +16,7 @@ from defusedxml import ElementTree
 
 from nowcast_service.downloads.remote import DownloadError, DownloadLimits, download_atomic
 from nowcast_service.downloads.safe_zip import UnsafeZipError, validate_zip
+from nowcast_service.sources.cap_parser import parse_cap_xml
 from nowcast_service.sources.dwd_cap_directory import (
     CAP_CELLS_SPEC,
     CAP_COMMUNE_SPEC,
@@ -115,10 +116,26 @@ async def inspect_product(
         raise RuntimeError(f"CAP archive validation failed: {exc}") from exc
 
     samples: list[dict[str, Any]] = []
+    semantic_failures: list[dict[str, str]] = []
+    semantic_parsed = 0
     with zipfile.ZipFile(archive, "r") as bundle:
-        for info in infos[:3]:
-            samples.append(inspect_xml(bundle.read(info), info.filename))
-    return {
+        for index, info in enumerate(infos):
+            content = bundle.read(info)
+            if index < 3:
+                samples.append(inspect_xml(content, info.filename))
+            try:
+                parse_cap_xml(content)
+                semantic_parsed += 1
+            except Exception as exc:
+                if len(semantic_failures) < 20:
+                    semantic_failures.append(
+                        {
+                            "name": info.filename,
+                            "error": f"{type(exc).__name__}: {exc}",
+                        }
+                    )
+
+    result = {
         "product": spec.product,
         "candidate": {
             "name": candidate.name,
@@ -134,8 +151,19 @@ async def inspect_product(
         "totalExpandedBytes": sum(info.file_size for info in infos),
         "suffixes": sorted({Path(info.filename).suffix.casefold() for info in infos}),
         "maxDepth": max(len(Path(info.filename).parts) for info in infos),
+        "semanticParsed": semantic_parsed,
+        "semanticFailureCount": len(infos) - semantic_parsed,
+        "semanticFailures": semantic_failures,
         "samples": samples,
     }
+    if semantic_failures:
+        first = semantic_failures[0]
+        raise RuntimeError(
+            "CAP semantic parsing failed for "
+            f"{len(infos) - semantic_parsed}/{len(infos)} members; "
+            f"first={first['name']}: {first['error']}"
+        )
+    return result
 
 
 async def run(output: Path) -> None:
@@ -145,7 +173,7 @@ async def run(output: Path) -> None:
         with tempfile.TemporaryDirectory(prefix="astro-cap-smoke-") as temporary:
             report: dict[str, Any] = {
                 "generatedAt": datetime.now(UTC).isoformat(),
-                "purpose": "live CAP structure verification; not a safety decision",
+                "purpose": "live CAP structure and semantic verification; not a safety decision",
                 "products": [],
             }
             for spec in (CAP_COMMUNE_SPEC, CAP_CELLS_SPEC):
