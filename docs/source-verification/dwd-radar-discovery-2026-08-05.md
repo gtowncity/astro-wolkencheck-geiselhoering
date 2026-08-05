@@ -1,112 +1,193 @@
-# DWD source verification: radar directory and archive discovery
+# DWD source verification: current RV and WN HDF5 products
 
-Verified on 2026-08-05 against the official DWD Open Data directory indexes.
-This document records only what was actually observed or documented. Binary
-HDF5 metadata verification remains a separate gate before radar values can
-influence the safety decision.
+Verification date: 2026-08-05 UTC
 
-## RV
+This document separates observed source facts from application decisions. The
+live smoke test was used only to verify current file structure. It did not
+produce or authorize a safety state.
 
-Official directory:
+## Live smoke test result
 
-```text
-https://opendata.dwd.de/weather/radar/composite/rv/
-```
-
-Observed current naming:
+Workflow run:
 
 ```text
-composite_rv_YYYYMMDD_HHMM.tar
-composite_rv_LATEST.tar
+DWD Live Source Smoke / run 30981576132
+result: success
 ```
 
-The same directory also contained older transitional files named like:
+The workflow downloaded both current aliases, validated and extracted the TAR
+archives, opened HDF5 members with `h5py`, and uploaded a JSON report.
+
+### RV archive
 
 ```text
-DE1200_RVYYMMDDHHMM.tar.bz2
+alias: composite_rv_LATEST.tar
+archive SHA-256: 2e3a5103cd9fb4f4b0d13b1dc43fd93509f8f9e9dfeb87a38ed6e96a75a5d420
+archive bytes: 1,884,160
+reference cycle: 2026-08-05 06:25 UTC
+members: 25
+lead times: 000, 005, ..., 120 minutes
 ```
 
-The v4.3 implementation deliberately selects only the canonical HDF5 TAR
-family. A legacy file must not silently replace the verified HDF5 product.
+### WN archive
 
-Official DWD documentation describes RV as five-minute accumulated
-precipitation amount in millimetres. Each canonical TAR contains multiple
-forecast files named like:
+The single-underscore alias returned HTTP 404. The current observed alias with
+two underscores succeeded:
 
 ```text
-composite_rv_YYYYMMDD_HHMM_PPP-hd5
+alias: composite_wn__LATEST.tar
+archive SHA-256: 8251d47b54ce35c227d53c68fdfbde34462a20035b7465c176bd6e1ca6095cf1
+archive bytes: 1,853,440
+reference cycle: 2026-08-05 06:25 UTC
+members: 25
+lead times: 000, 005, ..., 120 minutes
 ```
 
-`PPP` is a forecast lead and must be read and checked rather than inferred from
-archive order.
+The resolver therefore retains both WN alias candidates and a timestamped-file
+fallback.
 
-## WN
+## Observed ODIM HDF5 structure
 
-Official directory:
+Both products used:
 
 ```text
-https://opendata.dwd.de/weather/radar/composite/wn/
+root Conventions: ODIM_H5/V2_3
+root /what version: H5rad 2.3
+shape: 1200 rows x 1100 columns
+cell size: 1000 m x 1000 m
+compression: gzip
 ```
 
-Observed current timestamped naming:
+Required observed paths:
 
 ```text
-composite_wn_YYYYMMDD_HHMM.tar
+/what
+/where
+/how
+/dataset1/what
+/dataset1/how
+/dataset1/data1/what
+/dataset1/data1/data
 ```
 
-The directory exposed the unusual alias:
+Observed projection:
 
 ```text
-composite_wn__LATEST.tar
++proj=stere +lat_ts=60 +lat_0=90 +lon_0=10
++x_0=543196.83521776402 +y_0=3622588.8619310022
++units=m +a=6378137 +b=6356752.3142451802 +no_defs
 ```
 
-with two underscores. The resolver therefore tries both the documented-looking
-single-underscore alias and the currently observed double-underscore alias,
-then falls back to the newest canonical timestamped file from the directory.
+The published geographic outer corners transform to approximately:
 
-WN is a reflectivity composite. It must not be treated as a quantitative
-precipitation amount without a separately documented conversion.
+```text
+left edge:       -500 m
+right edge:   1,099,500 m
+top edge:         500 m
+bottom edge: -1,199,500 m
+```
 
-## Resolver safety rules
+This confirms that row 0 is at the northern/top edge and column 0 at the
+western/left edge. Pixel indices are derived from transformed outer edges and
+cell size; they are not guessed from a hard-coded site pixel.
 
-The implemented discovery layer:
+## RV metadata
 
-- accepts only HTTPS on `opendata.dwd.de`,
-- rejects credentials and non-standard ports,
-- ignores off-host, parent and nested links,
-- ranks aliases first but retains timestamped fallbacks,
-- does not accept legacy RV/WN names as canonical HDF5 candidates,
-- does not declare a candidate valid until download and archive validation pass.
+Observed initial member:
 
-## Archive safety rules
+```text
+member: composite_rv_20260805_0625_000-hd5
+dtype: uint32
+quantity: ACRR
+gain: 0.0009999999317806213
+offset: -0.0009999999317806213
+nodata: 4294967295
+undetect: 0
+start: 2026-08-05 06:20:00 UTC
+end: 2026-08-05 06:25:00 UTC
+simulated: False
+```
 
-The initial TAR layer:
+Observed +120-minute member ended at 08:25 UTC and carried
+`simulated: True`.
 
-- never uses `extractall`,
-- rejects absolute and parent paths,
-- rejects nested paths, links and device entries,
-- accepts only expected HDF5-style suffixes,
-- limits entry count, per-entry size and total expanded size,
-- writes through temporary files and atomic rename.
+The application labels RV as a five-minute amount in `mm/5min` according to
+the current DWD product documentation. It keeps the original amount separate
+from any later derived hourly equivalent.
 
-## Remaining verification gate
+## WN metadata
 
-Before RV or WN can be marked `LIVE` or influence a safety state, a real current
-archive still has to be downloaded in a controlled live smoke test and the
-following must be recorded:
+Observed initial member:
 
-- archive SHA-256,
-- member list and lead times,
-- HDF5 signature,
-- ODIM/product version,
-- dimensions and axis orientation,
-- CRS and georeferencing,
-- gain, offset, unit, nodata and undetect values,
-- coverage at Geiselhöring,
-- consistency between filename and internal timestamps.
+```text
+member: composite_wn_20260805_0625_000-hd5
+dtype: uint16
+quantity: DBZH
+gain: 0.002929821616590115
+offset: -64.00292982161659
+nodata: 65535
+undetect: 0
+start: 2026-08-05 06:25:03 UTC
+end: 2026-08-05 06:25:34 UTC
+simulated: False
+```
 
-Until that gate succeeds, the runtime source remains `INITIALIZING`,
-`NOT_AVAILABLE` or `FAILED`; it must never produce `GREEN`.
+WN remains reflectivity in `dBZ`. It is not converted into a quantitative rain
+amount by the core parser.
+
+## Parser invariants implemented from the observation
+
+The HDF5 reader now rejects a frame unless all relevant conditions hold:
+
+- filename matches the current canonical product/member convention,
+- filename product and requested product agree,
+- root convention is exactly the verified ODIM version,
+- filename and root reference timestamps agree,
+- lead time and valid end time agree within a small publication tolerance,
+- observation/forecast simulation flag is consistent with lead time,
+- product quantity is `ACRR` for RV or `DBZH` for WN,
+- gain, offset and sentinels are finite and plausible,
+- dimensions, dataset shape and unsigned dtype agree,
+- projected corner extent agrees with dimensions and scale,
+- location transforms inside valid raster bounds.
+
+`nodata`, `undetect`, and valid values remain three distinct states.
+
+## Geiselhöring projection check
+
+Using the configured approximate coordinate:
+
+```text
+latitude: 48.84
+longitude: 12.40
+```
+
+the verified projection yields approximately:
+
+```text
+x: 730,661 m
+y: -850,177 m
+full-resolution pixel: row 850, column 731
+```
+
+The value is calculated at runtime from metadata and coordinates. It is not
+stored as a fixed pixel constant.
+
+## Remaining gate before runtime source state can become LIVE
+
+The following still has to be implemented and tested before RV can influence a
+real safety decision:
+
+- complete archive-cycle consistency check across all 25 members,
+- actual raster decoding for all lead times,
+- coverage and neighborhood evaluation,
+- conservative weak-rain and isolated-pixel rules,
+- arrival-window derivation,
+- source age and publication-delay handling,
+- atomic snapshot publication,
+- scheduler integration.
+
+Until these gates pass, RV and CAP remain non-green core sources.
 
 ## Official references
 
