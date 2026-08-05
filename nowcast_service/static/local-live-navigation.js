@@ -20,14 +20,24 @@
     summary.textContent = "Weitere offizielle Quellen für die Sichtprüfung";
     const copy = document.createElement("p");
     copy.textContent =
-      "Die lokale Live-Entscheidung ersetzt nicht den Blick auf Himmel, Horizont und Ausrüstung.";
+      "Die lokale Live-Entscheidung ersetzt nicht den Blick auf Himmel, " +
+      "Horizont und Ausrüstung.";
     const links = document.createElement("div");
     links.className = "awc-external-links";
     for (const item of [
-      ["DWD-Warnlage", "https://www.dwd.de/DE/wetter/warnungen_gemeinden/warnWetter_node.html"],
-      ["DWD-Radarfilm", "https://www.dwd.de/DE/leistungen/radarbild_film/radarbild_film.html"],
+      [
+        "DWD-Warnlage",
+        "https://www.dwd.de/DE/wetter/warnungen_gemeinden/warnWetter_node.html",
+      ],
+      [
+        "DWD-Radarfilm",
+        "https://www.dwd.de/DE/leistungen/radarbild_film/radarbild_film.html",
+      ],
       ["Satellitenbild", "https://www.sat24.com/de-de/country/de"],
-      ["Blitzortung", "https://www.blitzortung.org/de/live_lightning_maps.php"],
+      [
+        "Blitzortung",
+        "https://www.blitzortung.org/de/live_lightning_maps.php",
+      ],
     ]) {
       const link = document.createElement("a");
       link.href = item[1];
@@ -63,6 +73,44 @@
     }
   }
 
+  function configureTabSemantics(tabs, buttons) {
+    tabs.setAttribute("role", "tablist");
+    tabs.setAttribute("aria-label", "Bereich auswählen");
+    for (const button of buttons) {
+      const tabId = button.dataset.tab;
+      const panel = byId(tabId);
+      const buttonId = `awc-tab-${tabId}`;
+      button.id = buttonId;
+      button.setAttribute("role", "tab");
+      button.setAttribute("aria-controls", tabId);
+      if (panel) {
+        panel.setAttribute("role", "tabpanel");
+        panel.setAttribute("aria-labelledby", buttonId);
+      }
+    }
+  }
+
+  function handleTabKeydown(event, buttons) {
+    const supported = ["ArrowLeft", "ArrowRight", "Home", "End"];
+    if (!supported.includes(event.key)) return;
+    const currentIndex = buttons.indexOf(document.activeElement);
+    if (currentIndex < 0) return;
+
+    event.preventDefault();
+    let nextIndex = currentIndex;
+    if (event.key === "Home") nextIndex = 0;
+    if (event.key === "End") nextIndex = buttons.length - 1;
+    if (event.key === "ArrowRight") {
+      nextIndex = (currentIndex + 1) % buttons.length;
+    }
+    if (event.key === "ArrowLeft") {
+      nextIndex = (currentIndex - 1 + buttons.length) % buttons.length;
+    }
+    const target = buttons[nextIndex];
+    activateTab(target.dataset.tab);
+    target.focus();
+  }
+
   function configureNavigation() {
     const root = byId("live-dashboard-root");
     const tabsShell = document.querySelector(".tabs-shell");
@@ -70,9 +118,10 @@
     const nowPanel = byId("nowcast");
     const overviewPanel = byId("overview");
     const windowsPanel = byId("windows");
-    if (!root || !tabsShell || !tabs || !nowPanel || !overviewPanel || !windowsPanel) {
+    if (!root || !tabsShell || !tabs || !nowPanel || !overviewPanel) {
       return false;
     }
+    if (!windowsPanel) return initialized;
 
     const firstConfiguration = !initialized;
     const buttons = new Map(
@@ -86,16 +135,24 @@
     const hoursButton = buttons.get("hours");
     const dataButton = buttons.get("data");
     const windowsButton = buttons.get("windows");
-    if (!nowButton || !overviewButton || !hoursButton || !dataButton || !windowsButton) {
+    if (!nowButton || !overviewButton || !hoursButton || !dataButton) {
       return false;
     }
+    if (!windowsButton) return initialized;
+    const navigationButtons = [
+      nowButton,
+      overviewButton,
+      hoursButton,
+      dataButton,
+    ];
 
     for (const [tabId, label] of Object.entries(TAB_LABELS)) {
       const button = buttons.get(tabId);
       if (button) button.textContent = label;
     }
-    tabs.replaceChildren(nowButton, overviewButton, hoursButton, dataButton);
+    tabs.replaceChildren(...navigationButtons);
     windowsButton.remove();
+    configureTabSemantics(tabs, navigationButtons);
 
     const select = byId("mobileTabSelect");
     if (select) {
@@ -118,7 +175,11 @@
 
     const planningPanel = windowsPanel.querySelector(":scope > .panel");
     const overviewContent = byId("overviewContent");
-    if (planningPanel && overviewContent && planningPanel.parentElement !== overviewPanel) {
+    if (
+      planningPanel &&
+      overviewContent &&
+      planningPanel.parentElement !== overviewPanel
+    ) {
       planningPanel.classList.add("awc-planning-windows");
       overviewContent.insertAdjacentElement("afterend", planningPanel);
     }
@@ -126,9 +187,12 @@
     windowsPanel.classList.remove("active");
 
     if (firstConfiguration) {
-      for (const button of [nowButton, overviewButton, hoursButton, dataButton]) {
+      for (const button of navigationButtons) {
         button.addEventListener("click", () => activateTab(button.dataset.tab));
       }
+      tabs.addEventListener("keydown", (event) => {
+        handleTabKeydown(event, navigationButtons);
+      });
       select?.addEventListener("change", () => activateTab(select.value));
       initialized = true;
     }
@@ -140,7 +204,9 @@
     } catch {
       // The first tab remains JETZT when session storage is unavailable.
     }
-    const currentlyActive = document.querySelector(".tab-button.active")?.dataset.tab;
+    const currentlyActive = document.querySelector(
+      ".tab-button.active"
+    )?.dataset.tab;
     const target = firstConfiguration
       ? initialTab
       : TAB_LABELS[currentlyActive]
