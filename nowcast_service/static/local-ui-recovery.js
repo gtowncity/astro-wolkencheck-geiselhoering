@@ -5,25 +5,92 @@
     "api.open-meteo.com",
     "ensemble-api.open-meteo.com",
   ]);
+  const GEOCODING_URL = "https://geocoding-api.open-meteo.com/v1/search";
+  const DEFAULT_LOCATION = Object.freeze({
+    name: "Geiselhöring",
+    latitude: 48.84,
+    longitude: 12.40,
+  });
+  const BAVARIA_BOUNDS = Object.freeze({
+    minimumLatitude: 47.0,
+    maximumLatitude: 50.75,
+    minimumLongitude: 8.75,
+    maximumLongitude: 14.05,
+  });
   const REQUEST_TIMEOUT_MS = Number(window.__AWC_FORECAST_REQUEST_TIMEOUT_MS) || 10000;
   const TOTAL_LOADING_LIMIT_MS = Number(window.__AWC_FORECAST_TOTAL_TIMEOUT_MS) || 45000;
   const originalFetch = window.fetch.bind(window);
   const activeControllers = new Set();
+  let selectedLocation = loadStoredLocation();
+  let locationConfirmed = true;
   let loadingStartedAt = null;
   let watchdogTriggered = false;
   let syncQueued = false;
 
+  function loadStoredLocation() {
+    try {
+      const parsed = JSON.parse(window.localStorage.getItem("awc-forecast-location") || "null");
+      if (
+        parsed
+        && typeof parsed.name === "string"
+        && Number.isFinite(parsed.latitude)
+        && Number.isFinite(parsed.longitude)
+        && insideBavaria(parsed.latitude, parsed.longitude)
+      ) {
+        return parsed;
+      }
+    } catch {
+      // Invalid local storage must never block the default location.
+    }
+    return { ...DEFAULT_LOCATION };
+  }
+
+  function insideBavaria(latitude, longitude) {
+    return latitude >= BAVARIA_BOUNDS.minimumLatitude
+      && latitude <= BAVARIA_BOUNDS.maximumLatitude
+      && longitude >= BAVARIA_BOUNDS.minimumLongitude
+      && longitude <= BAVARIA_BOUNDS.maximumLongitude;
+  }
+
+  function saveLocation(location) {
+    selectedLocation = location;
+    locationConfirmed = true;
+    try {
+      window.localStorage.setItem("awc-forecast-location", JSON.stringify(location));
+    } catch {
+      // Persistence is optional; the current page still keeps the selected location.
+    }
+    window.dispatchEvent(new CustomEvent("awc:forecast-location", { detail: location }));
+    updateLocationCopy();
+    updateStartAvailability();
+  }
+
+  function requestUrl(input) {
+    const raw = typeof input === "string" ? input : input?.url;
+    return new URL(raw, window.location.href);
+  }
+
   function isForecastRequest(input) {
     try {
-      const raw = typeof input === "string" ? input : input?.url;
-      return FORECAST_HOSTS.has(new URL(raw, window.location.href).hostname);
+      return FORECAST_HOSTS.has(requestUrl(input).hostname);
     } catch {
       return false;
     }
   }
 
+  function withSelectedLocation(input) {
+    const url = requestUrl(input);
+    url.searchParams.set("latitude", String(selectedLocation.latitude));
+    url.searchParams.set("longitude", String(selectedLocation.longitude));
+    if (typeof input === "string") return url.toString();
+    return new Request(url.toString(), input);
+  }
+
   function guardedForecastFetch(input, init = {}) {
     if (!isForecastRequest(input)) return originalFetch(input, init);
+    if (!locationConfirmed) {
+      return Promise.reject(new Error("Forecast-Ort wurde noch nicht bestätigt."));
+    }
 
     const controller = new AbortController();
     const upstream = init.signal;
@@ -41,12 +108,15 @@
       ));
     }, REQUEST_TIMEOUT_MS);
 
-    return originalFetch(input, { ...init, signal: controller.signal })
-      .finally(() => {
-        window.clearTimeout(timeout);
-        activeControllers.delete(controller);
-        upstream?.removeEventListener?.("abort", relayAbort);
-      });
+    return originalFetch(withSelectedLocation(input), {
+      ...init,
+      signal: controller.signal,
+    }).finally(() => {
+      window.clearTimeout(timeout);
+      activeControllers.delete(controller);
+      upstream?.removeEventListener?.("abort", relayAbort);
+      queueSync();
+    });
   }
 
   window.fetch = guardedForecastFetch;
@@ -61,6 +131,7 @@
   window.AstroWolkencheckForecastNetwork = Object.freeze({
     abortAll: abortForecastRequests,
     activeCount: () => activeControllers.size,
+    selectedLocation: () => ({ ...selectedLocation }),
   });
 
   function byId(id) {
@@ -74,7 +145,9 @@
   function ensureForecastPlaceholder() {
     const target = byId("overviewContent");
     if (!target) return null;
-    const existingRealHero = target.querySelector(".decision-hero:not(.awc-forecast-placeholder)");
+    const existingRealHero = target.querySelector(
+      ".decision-hero:not(.awc-forecast-placeholder)"
+    );
     if (existingRealHero) return null;
 
     let placeholder = forecastPlaceholder();
@@ -87,15 +160,16 @@
       <div class="decision-copy">
         <div class="eyebrow">Astronomischer Forecast</div>
         <h2 id="awc-forecast-placeholder-title">Forecast noch nicht gestartet</h2>
-        <p id="awc-forecast-placeholder-detail">Zeitraum prüfen und anschließend „Forecast laden“ wählen. Vorher werden keine externen Wettermodelle abgefragt.</p>
+        <p id="awc-forecast-placeholder-detail">Zeitraum und Forecast-Ort prüfen und anschließend „Forecast laden“ wählen. Vorher werden keine externen Wettermodelle abgefragt.</p>
       </div>
       <div class="decision-facts">
         <div><span>Status</span><strong id="awc-forecast-placeholder-status">bereit</strong></div>
-        <div><span>Ort</span><strong>Geiselhöring</strong></div>
+        <div><span>Forecast-Ort</span><strong id="awc-forecast-placeholder-location"></strong></div>
         <div><span>Netzwerk</span><strong id="awc-forecast-placeholder-network">wartet auf Start</strong></div>
       </div>
     `;
     target.replaceChildren(placeholder);
+    updateLocationCopy();
     return placeholder;
   }
 
@@ -114,6 +188,132 @@
       const node = byId(id);
       if (node) node.textContent = value;
     }
+    updateLocationCopy();
+  }
+
+  function ensureLocationControls() {
+    const controls = document.querySelector(".app-header .controls");
+    const refresh = byId("refreshBtn");
+    if (!controls || !refresh || byId("awc-location-control")) return;
+
+    const wrapper = document.createElement("div");
+    wrapper.id = "awc-location-control";
+    wrapper.className = "awc-location-control";
+    wrapper.innerHTML = `
+      <label for="awc-location-query">Forecast- und Satellitenort</label>
+      <div class="awc-location-search-row">
+        <input id="awc-location-query" type="search" autocomplete="off" value="${selectedLocation.name}" aria-describedby="awc-location-status">
+        <button id="awc-location-search" type="button">Ort suchen</button>
+      </div>
+      <select id="awc-location-results" aria-label="Gefundenen Ort auswählen" hidden></select>
+      <small id="awc-location-status">Ausgewählt: ${selectedLocation.name}. Live-Sicherheit bleibt Geiselhöring.</small>
+    `;
+    controls.insertBefore(wrapper, refresh);
+
+    const query = byId("awc-location-query");
+    const search = byId("awc-location-search");
+    const results = byId("awc-location-results");
+    query?.addEventListener("input", () => {
+      locationConfirmed = query.value.trim() === selectedLocation.name;
+      updateStartAvailability();
+    });
+    query?.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        searchLocation();
+      }
+    });
+    search?.addEventListener("click", searchLocation);
+    results?.addEventListener("change", () => {
+      const option = results.selectedOptions[0];
+      if (!option?.dataset.location) return;
+      const location = JSON.parse(option.dataset.location);
+      query.value = location.name;
+      results.hidden = true;
+      saveLocation(location);
+    });
+  }
+
+  async function searchLocation() {
+    const query = byId("awc-location-query");
+    const results = byId("awc-location-results");
+    const status = byId("awc-location-status");
+    const button = byId("awc-location-search");
+    const name = query?.value.trim() || "";
+    if (!query || !results || !status || !button) return;
+    if (name.length < 2) {
+      status.textContent = "Bitte mindestens zwei Zeichen oder eine Postleitzahl eingeben.";
+      return;
+    }
+
+    button.disabled = true;
+    status.textContent = "Ort wird gesucht …";
+    results.hidden = true;
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), 10000);
+    try {
+      const url = new URL(GEOCODING_URL);
+      url.searchParams.set("name", name);
+      url.searchParams.set("count", "10");
+      url.searchParams.set("language", "de");
+      url.searchParams.set("format", "json");
+      url.searchParams.set("country_code", "DE");
+      const response = await originalFetch(url, {
+        cache: "no-store",
+        signal: controller.signal,
+      });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const payload = await response.json();
+      const matches = (payload.results || []).filter((item) =>
+        Number.isFinite(item.latitude)
+        && Number.isFinite(item.longitude)
+        && insideBavaria(item.latitude, item.longitude)
+      );
+      if (!matches.length) {
+        status.textContent = "Kein passender Ort im Bayern-Ausschnitt gefunden.";
+        return;
+      }
+      results.replaceChildren(...matches.map((item, index) => {
+        const location = {
+          name: [item.name, item.admin2, item.admin1]
+            .filter(Boolean)
+            .filter((part, position, values) => values.indexOf(part) === position)
+            .join(", "),
+          latitude: item.latitude,
+          longitude: item.longitude,
+        };
+        const option = document.createElement("option");
+        option.value = String(index);
+        option.textContent = location.name;
+        option.dataset.location = JSON.stringify(location);
+        return option;
+      }));
+      results.hidden = false;
+      results.selectedIndex = 0;
+      status.textContent = "Treffer auswählen; erst danach kann der Forecast starten.";
+    } catch (error) {
+      console.warn("Ortssuche fehlgeschlagen", error);
+      status.textContent = "Ortssuche fehlgeschlagen. Geiselhöring bleibt ausgewählt.";
+    } finally {
+      window.clearTimeout(timeout);
+      button.disabled = false;
+    }
+  }
+
+  function updateLocationCopy() {
+    const locationNode = byId("awc-forecast-placeholder-location");
+    if (locationNode) locationNode.textContent = selectedLocation.name;
+    const status = byId("awc-location-status");
+    if (status && locationConfirmed) {
+      status.textContent = `Ausgewählt: ${selectedLocation.name}. Live-Sicherheit bleibt Geiselhöring.`;
+    }
+    const note = byId("awc-forecast-start-note");
+    if (note) {
+      note.innerHTML = `
+        <strong>Kein automatischer Forecast-Abruf.</strong>
+        <span>Zeitraum und Ort prüfen, dann bewusst starten. Forecast/Satellit: ${selectedLocation.name}. Live-Sicherheit: Geiselhöring.</span>
+      `;
+    }
   }
 
   function ensureStartNote() {
@@ -122,11 +322,8 @@
     const note = document.createElement("div");
     note.id = "awc-forecast-start-note";
     note.className = "awc-forecast-start-note";
-    note.innerHTML = `
-      <strong>Kein automatischer Forecast-Abruf.</strong>
-      <span>Zeitraum prüfen, dann bewusst starten. Ort: Geiselhöring.</span>
-    `;
     controls.append(note);
+    updateLocationCopy();
   }
 
   function ensureCancelButton() {
@@ -180,24 +377,51 @@
     return document.querySelector("#cacheNotice .notice.error")?.textContent?.trim() || "";
   }
 
+  function isForecastLoading() {
+    const progress = byId("requestProgress");
+    return Boolean(progress && !progress.hidden) || activeControllers.size > 0;
+  }
+
+  function periodIsValid() {
+    const start = new Date(byId("startInput")?.value || "");
+    const end = new Date(byId("endInput")?.value || "");
+    return Number.isFinite(start.getTime())
+      && Number.isFinite(end.getTime())
+      && end > start;
+  }
+
+  function updateStartAvailability() {
+    const refresh = byId("refreshBtn");
+    if (!refresh || isForecastLoading()) return;
+    const allowed = locationConfirmed && periodIsValid();
+    refresh.disabled = !allowed;
+    refresh.title = allowed
+      ? `Forecast für ${selectedLocation.name} laden`
+      : "Zeitraum und Forecast-Ort zuerst bestätigen";
+  }
+
   function syncForecastUi() {
     syncQueued = false;
     restructureDashboard();
+    ensureLocationControls();
     ensureStartNote();
     ensureCancelButton();
 
     const refresh = byId("refreshBtn");
     const cancel = byId("awc-cancel-forecast");
-    const realHero = document.querySelector("#overviewContent .decision-hero:not(.awc-forecast-placeholder)");
+    const realHero = document.querySelector(
+      "#overviewContent .decision-hero:not(.awc-forecast-placeholder)"
+    );
     if (!refresh) return;
 
-    const loading = refresh.disabled;
+    const loading = isForecastLoading();
     if (loading) {
       if (loadingStartedAt === null) loadingStartedAt = Date.now();
+      refresh.disabled = true;
       if (cancel) cancel.hidden = false;
       updatePlaceholder({
         title: "Forecast wird geladen",
-        detail: `${currentProgressText()}. Langsame oder nicht antwortende Quellen werden automatisch nach spätestens 10 Sekunden pro Anfrage beendet.`,
+        detail: `${currentProgressText()}. Langsame oder nicht antwortende Quellen werden nach spätestens 10 Sekunden pro Anfrage beendet.`,
         status: currentProgressText(),
         network: `${activeControllers.size} externe Anfragen aktiv`,
         tone: "warn",
@@ -208,6 +432,8 @@
     loadingStartedAt = null;
     watchdogTriggered = false;
     if (cancel) cancel.hidden = true;
+    refresh.textContent = "Forecast laden";
+    updateStartAvailability();
     if (realHero) return;
 
     const error = visibleForecastError();
@@ -224,8 +450,10 @@
 
     updatePlaceholder({
       title: "Forecast noch nicht gestartet",
-      detail: "Zeitraum prüfen und anschließend „Forecast laden“ wählen. Vorher werden keine externen Wettermodelle abgefragt.",
-      status: "bereit",
+      detail: locationConfirmed
+        ? "Zeitraum und Forecast-Ort sind vorbereitet. Erst „Forecast laden“ startet externe Wettermodelle."
+        : "Bitte einen gefundenen Forecast-Ort auswählen. Vorher werden keine externen Wettermodelle abgefragt.",
+      status: locationConfirmed ? "bereit" : "Ort auswählen",
       network: "wartet auf Start",
       tone: "neutral",
     });
@@ -249,7 +477,7 @@
         abortForecastRequests();
         updatePlaceholder({
           title: "Forecast-Abruf automatisch beendet",
-          detail: "Der Gesamtabruf hat das Sicherheitszeitlimit überschritten. Bitte erneut versuchen; die lokale Live-Sicherheit war davon nicht betroffen.",
+          detail: "Der Gesamtabruf hat das feste Zeitlimit überschritten. Bitte erneut versuchen; die lokale Live-Sicherheit war davon nicht betroffen.",
           status: "Zeitlimit erreicht",
           network: "offene Anfragen beendet",
           tone: "bad",
@@ -260,11 +488,15 @@
 
   function init() {
     const refresh = byId("refreshBtn");
-    if (refresh && !refresh.disabled) refresh.textContent = "Forecast laden";
     ensureForecastPlaceholder();
+    ensureLocationControls();
     ensureStartNote();
     ensureCancelButton();
     restructureDashboard();
+    updateLocationCopy();
+    window.dispatchEvent(
+      new CustomEvent("awc:forecast-location", { detail: selectedLocation })
+    );
 
     const observer = new MutationObserver(queueSync);
     observer.observe(document.body, {
@@ -276,13 +508,29 @@
     });
     byId("startInput")?.addEventListener("change", queueSync);
     byId("endInput")?.addEventListener("change", queueSync);
-    refresh?.addEventListener("click", queueSync);
+    refresh?.addEventListener("click", (event) => {
+      if (!locationConfirmed || !periodIsValid()) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        updatePlaceholder({
+          title: "Forecast noch nicht gestartet",
+          detail: "Zeitraum und einen gefundenen Forecast-Ort zuerst bestätigen.",
+          status: "Eingaben fehlen",
+          network: "keine Anfrage gestartet",
+          tone: "warn",
+        });
+        return;
+      }
+      queueSync();
+    }, true);
     startWatchdog();
     queueSync();
   }
 
   if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", () => window.setTimeout(init, 0), { once: true });
+    document.addEventListener("DOMContentLoaded", () => window.setTimeout(init, 0), {
+      once: true,
+    });
   } else {
     window.setTimeout(init, 0);
   }
