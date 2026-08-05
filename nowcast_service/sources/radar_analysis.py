@@ -494,7 +494,7 @@ def analyze_radar_cycle(
         if frame.site_maximum_mm_5min is not None
     )
     if maxima:
-        maximum, maximum_lead = max(maxima, key=lambda item: cast(float, item[0]))
+        maximum, maximum_lead = max(maxima, key=lambda item: item[0])
     else:
         maximum, maximum_lead = None, None
     zero = by_lead.get(0)
