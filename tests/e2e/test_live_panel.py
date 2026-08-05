@@ -12,7 +12,7 @@ STATIC = ROOT / "nowcast_service" / "static"
 PUBLIC_SCRIPT = ROOT / "public-live-banner.js"
 
 
-def radar_timeline(*, approaching: bool) -> list[dict[str, object]]:
+def radar_frames(*, approaching: bool) -> list[dict[str, object]]:
     frames: list[dict[str, object]] = []
     for index, lead in enumerate(range(0, 121, 5)):
         distance = 83 - index * 1.3 if approaching else 83 + index / 3
@@ -43,10 +43,9 @@ def radar_timeline(*, approaching: bool) -> list[dict[str, object]]:
 
 def source(
     source_id: str,
-    *,
     payload: dict[str, object],
+    *,
     state: str = "LIVE",
-    age_seconds: int = 30,
     complete: bool = True,
     stale_after: int = 900,
     invalid_after: int = 1800,
@@ -54,7 +53,7 @@ def source(
     return {
         "sourceId": source_id,
         "state": state,
-        "ageSeconds": age_seconds,
+        "ageSeconds": 30,
         "isComplete": complete,
         "staleAfterSeconds": stale_after,
         "invalidAfterSeconds": invalid_after,
@@ -62,7 +61,7 @@ def source(
     }
 
 
-def warnings(*, red: bool) -> list[dict[str, object]]:
+def active_warnings(*, red: bool) -> list[dict[str, object]]:
     if red:
         return [
             {
@@ -91,7 +90,23 @@ def warnings(*, red: bool) -> list[dict[str, object]]:
 
 
 def snapshot(*, red: bool) -> dict[str, object]:
-    radar_payload: dict[str, object] = {
+    state = "RED" if red else "GREEN"
+    hazards: list[dict[str, object]] = []
+    if red:
+        hazards.append(
+            {
+                "hazardKey": "DWD_CAP:CAP_RELEVANT_WARNING_RED",
+                "source": "DWD_CAP",
+                "state": "RED",
+                "reasonCode": "CAP_RELEVANT_WARNING_RED",
+                "reason": "Amtliche Gewitterwarnung am Standort.",
+                "lastConfirmedAt": "2026-08-05T09:00:00Z",
+                "holdUntil": "2026-08-05T09:30:00Z",
+                "clearStreak": 0,
+                "clearCyclesRequired": 2,
+            }
+        )
+    radar = {
         "cycleTime": "2026-08-05T08:55:00Z",
         "frameCount": 25,
         "forecastHorizonMinutes": 120,
@@ -116,29 +131,11 @@ def snapshot(*, red: bool) -> dict[str, object]:
         "unit": "mm/5min",
         "coverage0To60": True,
         "coverage0To120": True,
-        "frameTimeline": radar_timeline(approaching=red),
+        "frameTimeline": radar_frames(approaching=red),
     }
-    hazards: list[dict[str, object]] = []
-    if red:
-        hazards.append(
-            {
-                "hazardKey": "DWD_CAP:CAP_RELEVANT_WARNING_RED",
-                "source": "DWD_CAP",
-                "state": "RED",
-                "reasonCode": "CAP_RELEVANT_WARNING_RED",
-                "reason": "Amtliche Gewitterwarnung am Standort.",
-                "lastConfirmedAt": "2026-08-05T09:00:00Z",
-                "holdUntil": "2026-08-05T09:30:00Z",
-                "clearStreak": 0,
-                "clearCyclesRequired": 2,
-            }
-        )
-    state = "RED" if red else "GREEN"
     return {
         "snapshotId": state.lower(),
         "evaluationAt": "2026-08-05T09:00:00Z",
-        "algorithmVersion": "safety-1.0.0",
-        "configurationVersion": "1",
         "equipmentState": "DEPLOYED_ATTENDED",
         "hardwareRisk": {
             "state": state,
@@ -154,43 +151,30 @@ def snapshot(*, red: bool) -> dict[str, object]:
             "LOCAL_PERSISTENCE": "LIVE",
         },
         "sources": [
-            source("DWD_RV", payload=radar_payload),
+            source("DWD_RV", radar),
             source(
                 "DWD_CAP",
-                payload={"active": warnings(red=red)},
+                {"active": active_warnings(red=red)},
                 stale_after=1200,
                 invalid_after=2700,
             ),
             source(
                 "LOCAL_PERSISTENCE",
-                payload={},
+                {},
                 stale_after=86400,
                 invalid_after=172800,
             ),
-            source(
-                "DWD_WN",
-                payload={},
-                state="NOT_AVAILABLE",
-                complete=False,
-            ),
-            source(
-                "RAIN_SENSOR",
-                payload={},
-                state="DISABLED",
-                complete=False,
-                stale_after=60,
-                invalid_after=120,
-            ),
+            source("DWD_WN", {}, state="NOT_AVAILABLE", complete=False),
+            source("RAIN_SENSOR", {}, state="DISABLED", complete=False),
         ],
     }
 
 
-def html_shell() -> str:
+def shell() -> str:
     return """<!doctype html>
 <html lang='de'>
 <head>
   <meta charset='utf-8'>
-  <title>Forecast</title>
   <link rel='stylesheet' href='/local-live.css'>
   <link rel='stylesheet' href='/local-live-timeline.css'>
 </head>
@@ -202,9 +186,6 @@ def html_shell() -> str:
     </header>
     <nav class='tabs-shell'>
       <button class='tab-button' data-tab='overview'>Übersicht</button>
-      <button class='tab-button' data-tab='windows'>Beste Zeiten</button>
-      <button class='tab-button' data-tab='hours'>Stunden</button>
-      <button class='tab-button' data-tab='data'>Daten</button>
       <select id='mobileTabSelect'>
         <option value='overview'>Übersicht</option>
       </select>
@@ -213,10 +194,7 @@ def html_shell() -> str:
       <article class='decision-hero warn'>
         <h2>Nur unter Vorbehalt</h2>
         <div class='decision-facts'>
-          <div>
-            <span>Größtes Risiko</span>
-            <strong>Forecast nur mittel sicher</strong>
-          </div>
+          <div><span>Risiko</span><strong>Forecast nur mittel sicher</strong></div>
           <div><span>Sicherheit</span><strong>mittel · 62/100</strong></div>
         </div>
       </article>
@@ -320,7 +298,7 @@ def fulfill(route: Route, state: dict[str, object]) -> None:
         ),
     }
     if path == "/":
-        route.fulfill(status=200, content_type="text/html", body=html_shell())
+        route.fulfill(status=200, content_type="text/html", body=shell())
     elif path in assets:
         content_type, file_path = assets[path]
         route.fulfill(
@@ -386,10 +364,10 @@ def test_live_dashboard_green_red_actions_and_mobile_layout() -> None:
         ).inner_text()
 
         page.locator("#awc-set-equipment").click()
-        with page.expect_request(
-            lambda request: (
-                request.method == "PATCH"
-                and urlparse(request.url).path == "/api/v1/session"
+        with page.expect_response(
+            lambda response: (
+                response.request.method == "PATCH"
+                and urlparse(response.url).path == "/api/v1/session"
             )
         ):
             page.locator(".awc-equipment-option").first.click()
@@ -422,10 +400,10 @@ def test_live_dashboard_green_red_actions_and_mobile_layout() -> None:
         ).inner_text()
         assert page.locator("#awc-hazard-card").is_visible()
 
-        with page.expect_request(
-            lambda request: (
-                request.method == "POST"
-                and urlparse(request.url).path == "/api/v1/alerts/acknowledge"
+        with page.expect_response(
+            lambda response: (
+                response.request.method == "POST"
+                and urlparse(response.url).path == "/api/v1/alerts/acknowledge"
             )
         ):
             page.locator("#awc-ack").click()
