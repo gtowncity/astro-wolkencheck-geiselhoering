@@ -66,7 +66,11 @@ def validate_zip(
                     raise UnsafeZipError("Encrypted ZIP members are not supported")
                 if _is_symlink(info):
                     raise UnsafeZipError("ZIP symlinks are not supported")
-                if not any(normalized.casefold().endswith(suffix) for suffix in limits.allowed_suffixes):
+                allowed_type = any(
+                    normalized.casefold().endswith(suffix)
+                    for suffix in limits.allowed_suffixes
+                )
+                if not allowed_type:
                     raise UnsafeZipError(f"Unexpected ZIP member type: {info.filename}")
                 if info.file_size <= 0 or info.file_size > limits.max_member_bytes:
                     raise UnsafeZipError("ZIP member size is outside the safety limit")
