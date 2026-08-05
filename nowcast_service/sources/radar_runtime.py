@@ -38,23 +38,54 @@ def _ring_payload(ring: RingStatistics) -> dict[str, int | float | None]:
     }
 
 
-def _frame_payload(frame: RadarFrameAnalysis) -> dict[str, Any]:
-    """Serialize one analysis frame without exposing raw radar arrays."""
+def _optional_attribute(value: object, name: str) -> Any:
+    """Read supplemental visualization data without invalidating a safety cycle."""
 
-    nearest = frame.nearest_component
+    return getattr(value, name, None)
+
+
+def _frame_payload(frame: RadarFrameAnalysis) -> dict[str, Any]:
+    """Serialize one analysis frame without exposing raw radar arrays.
+
+    Timeline statistics are supplemental UI data. A missing optional statistic
+    must not turn an otherwise complete, trusted radar safety cycle into a
+    source failure. Missing values remain explicit ``None`` in the API.
+    """
+
+    nearest = _optional_attribute(frame, "nearest_component")
+    nearest_bearing = (
+        _optional_attribute(nearest, "nearest_bearing_deg")
+        if nearest is not None
+        else None
+    )
+    rings = _optional_attribute(frame, "rings") or ()
     return {
-        "leadMinutes": frame.lead_minutes,
-        "coverageSufficient": frame.coverage_sufficient,
-        "validFractionSite": frame.valid_fraction_site,
-        "rainAtSite": frame.rain_at_site,
-        "siteWetPixelCount": frame.site_wet_pixel_count,
-        "siteIntensityMm5Min": frame.site_maximum_mm_5min,
-        "nearestDistanceKm": nearest.nearest_distance_km if nearest else None,
-        "nearestBearingDeg": nearest.nearest_bearing_deg if nearest else None,
-        "nearestDirection": _bearing_name(nearest.nearest_bearing_deg) if nearest else None,
-        "componentAreaKm2": nearest.area_km2 if nearest else None,
-        "componentMaximumMm5Min": nearest.maximum_mm_5min if nearest else None,
-        "rings": [_ring_payload(ring) for ring in frame.rings],
+        "leadMinutes": _optional_attribute(frame, "lead_minutes"),
+        "coverageSufficient": _optional_attribute(frame, "coverage_sufficient"),
+        "validFractionSite": _optional_attribute(frame, "valid_fraction_site"),
+        "rainAtSite": _optional_attribute(frame, "rain_at_site"),
+        "siteWetPixelCount": _optional_attribute(frame, "site_wet_pixel_count"),
+        "siteIntensityMm5Min": _optional_attribute(frame, "site_maximum_mm_5min"),
+        "nearestDistanceKm": (
+            _optional_attribute(nearest, "nearest_distance_km")
+            if nearest is not None
+            else None
+        ),
+        "nearestBearingDeg": nearest_bearing,
+        "nearestDirection": (
+            _bearing_name(nearest_bearing)
+            if isinstance(nearest_bearing, (int, float))
+            else None
+        ),
+        "componentAreaKm2": (
+            _optional_attribute(nearest, "area_km2") if nearest is not None else None
+        ),
+        "componentMaximumMm5Min": (
+            _optional_attribute(nearest, "maximum_mm_5min")
+            if nearest is not None
+            else None
+        ),
+        "rings": [_ring_payload(ring) for ring in rings],
     }
 
 
@@ -136,12 +167,15 @@ class RadarSourceRunner:
                     failure_code = failure_message = None
                     if age_seconds > invalid:
                         state, failure_code = SourceState.FAILED, "RADAR_SOURCE_TOO_OLD"
-                        failure_message = "Latest complete RV cycle is older than the invalid limit"
+                        failure_message = (
+                            "Latest complete RV cycle is older than the invalid limit"
+                        )
                     elif age_seconds > stale:
                         state, failure_code = SourceState.STALE, "RADAR_SOURCE_STALE"
                         failure_message = "Latest complete RV cycle is stale"
                     current = next(
-                        (frame for frame in analysis.frames if frame.lead_minutes == 0), None
+                        (frame for frame in analysis.frames if frame.lead_minutes == 0),
+                        None,
                     )
                     nearest = current.nearest_component if current else None
                     arrival = analysis.arrival
@@ -173,31 +207,48 @@ class RadarSourceRunner:
                             if arrival
                             else None
                         ),
-                        "nearestPrecipitationDistanceKm": nearest.nearest_distance_km
-                        if nearest
-                        else None,
-                        "nearestPrecipitationDirection": _bearing_name(nearest.nearest_bearing_deg)
-                        if nearest
-                        else None,
+                        "nearestPrecipitationDistanceKm": (
+                            nearest.nearest_distance_km if nearest else None
+                        ),
+                        "nearestPrecipitationDirection": (
+                            _bearing_name(nearest.nearest_bearing_deg)
+                            if nearest
+                            else None
+                        ),
                         "affectedAreaKm2": nearest.area_km2 if nearest else None,
                         "peakIntensityMm5Min": analysis.maximum_site_amount_mm_5min,
-                        "peakIntensityLeadMinutes": analysis.maximum_site_amount_lead_minutes,
-                        "siteIntensityMm5Min": current.site_maximum_mm_5min if current else None,
+                        "peakIntensityLeadMinutes": (
+                            analysis.maximum_site_amount_lead_minutes
+                        ),
+                        "siteIntensityMm5Min": (
+                            current.site_maximum_mm_5min if current else None
+                        ),
                         "frameTimeline": [
                             _frame_payload(frame)
-                            for frame in sorted(analysis.frames, key=lambda item: item.lead_minutes)
+                            for frame in sorted(
+                                analysis.frames,
+                                key=lambda item: item.lead_minutes,
+                            )
                         ],
                         "unit": "mm/5min",
-                        "hazardHoldUntil": iso(evaluated_at + timedelta(minutes=hold_minutes)),
+                        "hazardHoldUntil": iso(
+                            evaluated_at + timedelta(minutes=hold_minutes)
+                        ),
                     }
                     evidence = radar_hazard_evidence(
                         analysis,
-                        red_arrival_minutes=self._config.thresholds.radar_red_arrival_minutes,
-                        yellow_arrival_minutes=self._config.thresholds.radar_yellow_arrival_minutes,
+                        red_arrival_minutes=(
+                            self._config.thresholds.radar_red_arrival_minutes
+                        ),
+                        yellow_arrival_minutes=(
+                            self._config.thresholds.radar_yellow_arrival_minutes
+                        ),
                     )
                     return SourceSnapshot(
                         source_id=self.source_id,
-                        source_input_id=f"DWD_RV:{downloaded.sha256}:{reference.isoformat()}",
+                        source_input_id=(
+                            f"DWD_RV:{downloaded.sha256}:{reference.isoformat()}"
+                        ),
                         product="DWD_RV",
                         cycle_time=reference,
                         downloaded_at=evaluated_at,
@@ -219,5 +270,7 @@ class RadarSourceRunner:
                     errors.append(f"{candidate.name}:{type(exc).__name__}")
         raise SourceRunError(
             "RADAR_CYCLE_FAILED",
-            "No complete RV candidate could be processed (" + ", ".join(errors[:5]) + ")",
+            "No complete RV candidate could be processed ("
+            + ", ".join(errors[:5])
+            + ")",
         )
