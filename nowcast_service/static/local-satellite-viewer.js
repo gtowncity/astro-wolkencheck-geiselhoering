@@ -11,6 +11,7 @@
     index: -1,
     playing: false,
     playTimer: null,
+    refreshTimer: null,
     scale: 1,
     translateX: 0,
     translateY: 0,
@@ -18,8 +19,9 @@
     pointerX: 0,
     pointerY: 0,
     location: null,
-    mounted: false,
     loadingMetadata: false,
+    globalEventsBound: false,
+    mountQueued: false,
   };
 
   const byId = (id) => document.getElementById(id);
@@ -56,18 +58,8 @@
     return `${API}/image?${params.toString()}`;
   }
 
-  function mount() {
-    const host = document.querySelector(".awc-radar-visual");
-    if (!host) {
-      window.setTimeout(mount, 120);
-      return;
-    }
-    if (state.mounted && byId("awc-satellite-viewer")) return;
-
-    host.classList.add("awc-satellite-host");
-    host.removeAttribute("role");
-    host.removeAttribute("aria-label");
-    host.innerHTML = `
+  function viewerMarkup() {
+    return `
       <section id="awc-satellite-viewer" class="awc-satellite-viewer" aria-labelledby="awc-satellite-title">
         <header class="awc-satellite-toolbar">
           <div>
@@ -105,13 +97,38 @@
         <p class="awc-satellite-note">Quelle: EUMETSAT EUMETView · MTG-FCI · Bayern-Ausschnitt. Historische Frames sind bewusst älter; nur die neueste Aufnahme wird gegen die 20-Minuten-Aktualitätsgrenze geprüft.</p>
       </section>
     `;
-    state.mounted = true;
-    bindEvents();
-    loadMetadata(state.product, { keepLatest: true });
-    window.setInterval(refreshMetadata, METADATA_REFRESH_MS);
   }
 
-  function bindEvents() {
+  function queueMount() {
+    if (state.mountQueued) return;
+    state.mountQueued = true;
+    window.setTimeout(() => {
+      state.mountQueued = false;
+      mount();
+    }, 0);
+  }
+
+  function mount() {
+    if (byId("awc-satellite-viewer")) return true;
+    const host = document.querySelector(".awc-radar-visual");
+    if (!host) return false;
+
+    stopPlayback();
+    host.classList.add("awc-satellite-host");
+    host.removeAttribute("role");
+    host.removeAttribute("aria-label");
+    host.innerHTML = viewerMarkup();
+    resetTransform();
+    bindLocalEvents();
+    bindGlobalEvents();
+    loadMetadata(state.product, { keepLatest: true, force: true });
+    if (state.refreshTimer === null) {
+      state.refreshTimer = window.setInterval(refreshMetadata, METADATA_REFRESH_MS);
+    }
+    return true;
+  }
+
+  function bindLocalEvents() {
     byId("awc-satellite-product")?.addEventListener("change", (event) => {
       stopPlayback();
       state.product = event.target.value;
@@ -140,6 +157,11 @@
     viewport?.addEventListener("pointerup", onPointerUp);
     viewport?.addEventListener("pointercancel", onPointerUp);
     viewport?.addEventListener("dblclick", resetTransform);
+  }
+
+  function bindGlobalEvents() {
+    if (state.globalEventsBound) return;
+    state.globalEventsBound = true;
     document.addEventListener("fullscreenchange", updateFullscreenButton);
     window.addEventListener("awc:forecast-location", (event) => {
       const detail = event.detail;
@@ -151,7 +173,9 @@
         latitude: detail.latitude,
         longitude: detail.longitude,
       };
-      if (state.index >= 0) showFrame(state.index, { force: true });
+      if (state.index >= 0 && byId("awc-satellite-image")) {
+        showFrame(state.index, { force: true });
+      }
     });
   }
 
@@ -165,6 +189,7 @@
       });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       const metadata = await response.json();
+      if (!byId("awc-satellite-viewer")) return;
       state.metadata = metadata;
       state.location ||= metadata.location || null;
       populateProducts(metadata.products || []);
@@ -181,21 +206,32 @@
         setStatus("Keine EUMETSAT-Aufnahme verfügbar", "ERROR");
         return;
       }
-      const target = options.keepLatest ? state.frames.length - 1 : Math.max(0, state.index);
+      const target = options.keepLatest
+        ? state.frames.length - 1
+        : Math.max(0, Math.min(state.frames.length - 1, state.index));
       showFrame(target, { force: options.force });
     } catch (error) {
       console.warn("EUMETSAT-Metadaten konnten nicht geladen werden", error);
-      showPlaceholder("EUMETSAT antwortet derzeit nicht. Es wird kein Ersatz- oder Fake-Bild angezeigt.");
-      setStatus("Satellitendienst nicht erreichbar", "ERROR");
+      if (byId("awc-satellite-viewer")) {
+        showPlaceholder(
+          "EUMETSAT antwortet derzeit nicht. Es wird kein Ersatz- oder Fake-Bild angezeigt."
+        );
+        setStatus("Satellitendienst nicht erreichbar", "ERROR");
+      }
     } finally {
       state.loadingMetadata = false;
     }
   }
 
   async function refreshMetadata() {
-    if (!state.mounted || document.hidden || state.playing) return;
+    if (!byId("awc-satellite-viewer")) {
+      queueMount();
+      return;
+    }
+    if (document.hidden || state.playing) return;
     const previousLatest = state.frames.at(-1);
-    await loadMetadata(state.product, { keepLatest: state.index === state.frames.length - 1 });
+    const wasLatest = state.index === state.frames.length - 1;
+    await loadMetadata(state.product, { keepLatest: wasLatest });
     const nextLatest = state.frames.at(-1);
     if (previousLatest && nextLatest && previousLatest !== nextLatest) {
       setStatus("Neue EUMETSAT-Aufnahme verfügbar", "FRESH");
@@ -238,19 +274,22 @@
     image.classList.add("is-loading");
     const url = imageUrl(frame);
     image.onload = () => {
+      if (!image.isConnected) return;
       placeholder.hidden = true;
       image.classList.remove("is-loading");
       updateFrameStatus(frame);
       preloadFrame(bounded + 1);
     };
     image.onerror = () => {
+      if (!image.isConnected) return;
       image.classList.remove("is-loading");
       placeholder.hidden = false;
       placeholder.textContent = "Dieser echte EUMETSAT-Frame konnte nicht geladen werden.";
       setStatus("Aufnahme nicht verfügbar", "ERROR");
     };
     image.src = url;
-    byId("awc-satellite-time").textContent = formatTime(frame);
+    const timeNode = byId("awc-satellite-time");
+    if (timeNode) timeNode.textContent = formatTime(frame);
     updateControlAvailability();
   }
 
@@ -349,7 +388,11 @@
     const viewport = byId("awc-satellite-viewport");
     if (!viewport) return;
     const rect = viewport.getBoundingClientRect();
-    zoomBy(event.deltaY < 0 ? 0.3 : -0.3, event.clientX - rect.left, event.clientY - rect.top);
+    zoomBy(
+      event.deltaY < 0 ? 0.3 : -0.3,
+      event.clientX - rect.left,
+      event.clientY - rect.top,
+    );
   }
 
   function onPointerDown(event) {
@@ -426,13 +469,41 @@
   function updateFullscreenButton() {
     const button = byId("awc-satellite-fullscreen");
     if (!button) return;
-    button.textContent = document.fullscreenElement ? "Vollbild schließen" : "Vollbild";
+    button.textContent = document.fullscreenElement
+      ? "Vollbild schließen"
+      : "Vollbild";
     resetTransform();
   }
 
+  function observeDashboard() {
+    new MutationObserver(() => {
+      if (!byId("awc-satellite-viewer") && document.querySelector(".awc-radar-visual")) {
+        queueMount();
+      }
+    }).observe(document.documentElement, { childList: true, subtree: true });
+  }
+
+  function boot() {
+    bindGlobalEvents();
+    observeDashboard();
+    if (!mount()) window.setTimeout(queueMount, 120);
+  }
+
+  window.AstroWolkencheckSatelliteViewer = Object.freeze({
+    mount: queueMount,
+    refresh: () => loadMetadata(state.product, { keepLatest: true, force: true }),
+    getState: () => ({
+      product: state.product,
+      frameCount: state.frames.length,
+      index: state.index,
+      playing: state.playing,
+      scale: state.scale,
+      location: state.location ? { ...state.location } : null,
+    }),
+  });
+
+  boot();
   if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", mount, { once: true });
-  } else {
-    mount();
+    document.addEventListener("DOMContentLoaded", queueMount, { once: true });
   }
 })();
