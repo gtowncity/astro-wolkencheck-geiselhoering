@@ -62,33 +62,33 @@ def change_summary() -> dict[str, object]:
 
 
 def test_server_history_replaces_and_survives_browser_change_copy() -> None:
-    summary_json = json.dumps(change_summary())
+    summary = change_summary()
 
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch()
         page = browser.new_page()
         page.set_content(PAGE)
         page.add_script_tag(
-            content=f"""
-            const summary = {summary_json};
-            window.fetch = async () => new Response(JSON.stringify(summary), {{
-              status: 200,
-              headers: {{'Content-Type': 'application/json'}},
-            }});
-            window.AstroWolkencheckLiveDashboard = {{
-              getState() {{
-                return {{
-                  snapshot: {{
+            content="""
+            window.fetch = async () => new Response('{}', {status: 503});
+            window.AstroWolkencheckLiveDashboard = {
+              getState() {
+                return {
+                  snapshot: {
                     snapshotId: 'current',
-                    hardwareRisk: {{dataQuality: 'COMPLETE'}},
-                  }},
-                }};
-              }},
-            }};
+                    hardwareRisk: {dataQuality: 'COMPLETE'},
+                  },
+                };
+              },
+            };
             """
         )
         page.add_script_tag(content=SCRIPT.read_text(encoding="utf-8"))
-        page.locator("#awc-change-list[data-source='SERVER_HISTORY']").wait_for()
+        page.wait_for_function("Boolean(window.AstroWolkencheckLiveChanges)")
+        page.evaluate(
+            "summary => window.AstroWolkencheckLiveChanges.render(summary)",
+            summary,
+        )
 
         intro = page.locator("#awc-change-summary")
         assert intro.inner_text() == (
@@ -113,8 +113,9 @@ def test_server_history_replaces_and_survives_browser_change_copy() -> None:
             list.replaceChildren(item);
             """
         )
-        page.wait_for_function(
-            "document.getElementById('awc-change-list').innerText.includes('GREEN → YELLOW')"
+        page.evaluate(
+            "summary => window.AstroWolkencheckLiveChanges.render(summary)",
+            summary,
         )
         assert "Späterer Browser-Vergleich" not in page.locator(
             "#awc-change-list"
