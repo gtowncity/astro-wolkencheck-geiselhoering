@@ -88,6 +88,44 @@ def make_snapshot(state: str, snapshot_id: str) -> dict[str, object]:
     }
 
 
+def make_long_failure_snapshot() -> dict[str, object]:
+    snapshot = make_snapshot("UNKNOWN", "snapshot-long-cap-error")
+    snapshot["hardwareRisk"] = {
+        "state": "UNKNOWN",
+        "dataQuality": "INSUFFICIENT",
+        "action": "CHECK_EQUIPMENT_IMMEDIATELY",
+        "reasonCodes": ["SOURCE_DWD_CAP_FAILED"],
+        "reasons": [
+            "No complete CAP candidate could be processed "
+            "(Z_CAP_C_EDZW_LATEST_PVW_STATUS_PREMIUMDWD_COMMUNEUNION_DE.zip:"
+            "CapArchiveError: Required CAP timestamp is missing: expires; "
+            "Z_CAP_C_EDZW_20260805111925_PVW_STATUS_PREMIUMDWD_COMMUNEUNION_DE.zip:"
+            "CapArchiveError: Required CAP timestamp is missing: expires)"
+        ],
+    }
+    sources = snapshot["sources"]
+    assert isinstance(sources, list)
+    cap = next(item for item in sources if item["sourceId"] == "DWD_CAP")
+    cap.update(
+        {
+            "state": "FAILED",
+            "ageSeconds": 0,
+            "isComplete": False,
+            "failureCode": "CAP_CYCLE_FAILED",
+            "failureMessage": (
+                "No complete CAP candidate could be processed "
+                "(Z_CAP_C_EDZW_LATEST_PVW_STATUS_PREMIUMDWD_COMMUNEUNION_DE.zip:"
+                "CapArchiveError: Required CAP timestamp is missing: expires; "
+                "Z_CAP_C_EDZW_20260805111925_PVW_STATUS_PREMIUMDWD_COMMUNEUNION_DE.zip:"
+                "CapArchiveError: Required CAP timestamp is missing: expires; "
+                "Z_CAP_C_EDZW_20260805110830_PVW_STATUS_PREMIUMDWD_COMMUNEUNION_DE.zip:"
+                "CapArchiveError: Required CAP timestamp is missing: expires)"
+            ),
+        }
+    )
+    return snapshot
+
+
 def install_browser_doubles(page: Page) -> None:
     page.add_init_script(
         """
@@ -237,7 +275,7 @@ def test_live_panel_alarm_accessibility_sse_and_connection_loss() -> None:
 
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch()
-        page = browser.new_page()
+        page = browser.new_page(viewport={"width": 1165, "height": 568})
         install_browser_doubles(page)
         page.route("**/*", route_request)
         page.goto("http://awc.test/")
@@ -249,6 +287,36 @@ def test_live_panel_alarm_accessibility_sse_and_connection_loss() -> None:
         assert page.locator("#awc-state-symbol").inner_text() == "✓"
         assert page.locator("#awc-snapshot").inner_text() == "snapshot-green"
         assert page.locator("#forecast-existing").inner_text() == "Forecast bleibt erhalten"
+
+        long_failure = make_long_failure_snapshot()
+        page.evaluate(
+            "payload => window.__awcEventSource.emit('snapshot', payload)",
+            long_failure,
+        )
+        assert panel.get_attribute("data-state") == "UNKNOWN"
+        assert page.locator("#awc-sources").inner_text().count("CAP_CYCLE_FAILED") == 1
+        assert page.evaluate(
+            "document.documentElement.scrollWidth <= document.documentElement.clientWidth"
+        )
+        assert page.evaluate(
+            """
+            () => {
+              const panel = document.querySelector('#awc-live-panel').getBoundingClientRect();
+              return [...document.querySelectorAll('#awc-live-panel .awc-card')].every(card => {
+                const box = card.getBoundingClientRect();
+                return box.left >= panel.left - 1 && box.right <= panel.right + 1;
+              });
+            }
+            """
+        )
+
+        green_after_failure = make_snapshot("GREEN", "snapshot-green-after-failure")
+        api_state["snapshot"] = green_after_failure
+        page.evaluate(
+            "payload => window.__awcEventSource.emit('snapshot', payload)",
+            green_after_failure,
+        )
+        assert panel.get_attribute("data-state") == "GREEN"
 
         page.keyboard.press("Tab")
         assert page.locator(":focus").get_attribute("id") == "awc-enable-alerts"
