@@ -10,6 +10,22 @@ pytestmark = pytest.mark.e2e
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "nowcast_service" / "static" / "local-live-changes.js"
 
+PAGE = """<!doctype html>
+<html>
+  <body>
+    <section id="live-dashboard-root">
+      <article class="awc-change-card">
+        <div class="awc-card-head">
+          <p id="awc-change-summary">Alter Browser-Vergleich.</p>
+        </div>
+        <ul id="awc-change-list">
+          <li>Nur im Browser gespeicherter Vergleich.</li>
+        </ul>
+      </article>
+    </section>
+  </body>
+</html>"""
+
 
 def change_summary() -> dict[str, object]:
     return {
@@ -49,7 +65,9 @@ def change_summary() -> dict[str, object]:
 def test_server_history_replaces_and_survives_browser_change_copy() -> None:
     def route_request(route: Route) -> None:
         path = urlparse(route.request.url).path
-        if path == "/api/v1/changes":
+        if path == "/":
+            route.fulfill(status=200, content_type="text/html", body=PAGE)
+        elif path == "/api/v1/changes":
             route.fulfill(
                 status=200,
                 content_type="application/json",
@@ -62,26 +80,7 @@ def test_server_history_replaces_and_survives_browser_change_copy() -> None:
         browser = playwright.chromium.launch()
         page = browser.new_page()
         page.route("**/*", route_request)
-        page.set_content(
-            """
-            <!doctype html>
-            <html>
-              <head><base href="http://awc.test/"></head>
-              <body>
-                <section id="live-dashboard-root">
-                  <article class="awc-change-card">
-                    <div class="awc-card-head">
-                      <p id="awc-change-summary">Alter Browser-Vergleich.</p>
-                    </div>
-                    <ul id="awc-change-list">
-                      <li>Nur im Browser gespeicherter Vergleich.</li>
-                    </ul>
-                  </article>
-                </section>
-              </body>
-            </html>
-            """
-        )
+        page.goto("http://awc.test/")
         page.add_script_tag(
             content="""
             window.AstroWolkencheckLiveDashboard = {
