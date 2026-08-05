@@ -9,6 +9,10 @@
   max-width: 100%;
 }
 
+.awc-secondary-grid {
+  align-items: start;
+}
+
 .awc-warning-facts,
 .awc-hazard-entry dl {
   display: grid;
