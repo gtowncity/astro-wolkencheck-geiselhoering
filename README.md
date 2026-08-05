@@ -49,7 +49,9 @@ Ausführliche Hinweise:
 - [Lokaler Betrieb](docs/operations.md)
 - [Sicherheitskonzept](docs/security.md)
 - [Architektur](docs/architecture.md)
-- [DWD-Quellen](docs/dwd-sources.md)
+- [DWD-Radarquellenprüfung](docs/source-verification/dwd-radar-discovery-2026-08-05.md)
+- [DWD-CAP-Quellenprüfung](docs/source-verification/dwd-cap-2026-08-05.md)
+- [DWD-Warngebietsprüfung](docs/source-verification/dwd-warning-areas-2026-08-05.md)
 
 ## Datenschutz
 
