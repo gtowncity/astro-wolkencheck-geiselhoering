@@ -1,0 +1,177 @@
+from pathlib import Path
+
+from fastapi.testclient import TestClient
+
+from nowcast_service.app import create_app
+
+
+def client(tmp_path: Path) -> TestClient:
+    return TestClient(create_app(data_dir=tmp_path))
+
+
+def test_initial_safety_is_unknown_and_never_green(tmp_path: Path) -> None:
+    response = client(tmp_path).get("/api/v1/safety")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["hardwareRisk"]["state"] == "UNKNOWN"
+    assert payload["hardwareRisk"]["action"] == "CHECK_EQUIPMENT_IMMEDIATELY"
+    assert set(payload["hardwareRisk"]["reasonCodes"]) == {
+        "SOURCE_DWD_CAP_INITIALIZING",
+        "SOURCE_DWD_RV_INITIALIZING",
+    }
+    assert response.headers["cache-control"] == "no-store"
+
+
+def test_meta_liveness_and_readiness_are_explicit(tmp_path: Path) -> None:
+    test_client = client(tmp_path)
+
+    meta = test_client.get("/api/v1/meta")
+    live = test_client.get("/api/v1/health/live")
+    ready = test_client.get("/api/v1/health/ready")
+
+    assert meta.status_code == 200
+    assert meta.json()["mode"] == "LOCAL"
+    assert live.json()["status"] == "LIVE"
+    assert ready.json()["status"] == "READY"
+    assert ready.json()["safetyDataReady"] is False
+
+
+def test_runtime_config_explicitly_identifies_local_mode(tmp_path: Path) -> None:
+    response = client(tmp_path).get("/runtime-config.json")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "mode": "LOCAL",
+        "localApiAvailable": True,
+        "apiBase": "/api/v1",
+        "browserAudioEnabled": True,
+        "browserNotificationsEnabled": True,
+    }
+
+
+def test_session_patch_requires_csrf(tmp_path: Path) -> None:
+    test_client = client(tmp_path)
+
+    denied = test_client.patch(
+        "/api/v1/session",
+        json={"equipment_state": "NOT_DEPLOYED"},
+    )
+
+    assert denied.status_code == 403
+
+
+def test_session_patch_rejects_foreign_origin(tmp_path: Path) -> None:
+    test_client = client(tmp_path)
+    csrf = test_client.get("/api/v1/security/csrf").json()["token"]
+
+    denied = test_client.patch(
+        "/api/v1/session",
+        headers={"X-CSRF-Token": csrf, "Origin": "https://evil.example"},
+        json={"equipment_state": "NOT_DEPLOYED"},
+    )
+
+    assert denied.status_code == 403
+    assert denied.json()["detail"] == "Origin not allowed"
+
+
+def test_session_patch_persists_equipment_state(tmp_path: Path) -> None:
+    test_client = client(tmp_path)
+    csrf = test_client.get("/api/v1/security/csrf").json()["token"]
+
+    response = test_client.patch(
+        "/api/v1/session",
+        headers={"X-CSRF-Token": csrf},
+        json={"equipment_state": "NOT_DEPLOYED"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["equipmentState"] == "NOT_DEPLOYED"
+
+    restarted = client(tmp_path)
+    assert restarted.get("/api/v1/session").json()["equipmentState"] == "NOT_DEPLOYED"
+
+
+def test_public_config_does_not_expose_coordinates(tmp_path: Path) -> None:
+    payload = client(tmp_path).get("/api/v1/config/public").json()
+
+    assert "latitude" not in payload["location"]
+    assert "longitude" not in payload["location"]
+
+
+def test_change_summary_is_empty_before_first_complete_decision(tmp_path: Path) -> None:
+    response = client(tmp_path).get("/api/v1/changes")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["hasPrevious"] is False
+    assert payload["currentSnapshotId"] is None
+    assert payload["meaningfulChangeCount"] == 0
+
+
+def test_root_serves_existing_forecast_application_with_live_assets(tmp_path: Path) -> None:
+    response = client(tmp_path).get("/")
+
+    assert response.status_code == 200
+    assert "<title>Astro Wolkencheck - Geiselhöring</title>" in response.text
+    for asset in (
+        "/local-live.css",
+        "/local-live-timeline.css",
+        "/local-live-details.css",
+        "/local-live-navigation.css",
+        "/local-live.js",
+        "/local-live-timeline.js",
+        "/local-live-details.js",
+        "/local-live-changes.js",
+        "/local-live-navigation.js",
+    ):
+        assert asset in response.text
+    assert response.headers["x-content-type-options"] == "nosniff"
+
+
+def test_local_live_enhancement_assets_are_served(tmp_path: Path) -> None:
+    test_client = client(tmp_path)
+
+    timeline_script = test_client.get("/local-live-timeline.js")
+    timeline_style = test_client.get("/local-live-timeline.css")
+    details_script = test_client.get("/local-live-details.js")
+    details_style = test_client.get("/local-live-details.css")
+    changes_script = test_client.get("/local-live-changes.js")
+    navigation_script = test_client.get("/local-live-navigation.js")
+    navigation_style = test_client.get("/local-live-navigation.css")
+
+    assert timeline_script.status_code == 200
+    assert timeline_script.headers["content-type"].startswith("text/javascript")
+    assert "awc-timeline-path" in timeline_script.text
+    assert "frame.rainAtSite" in timeline_script.text
+    assert timeline_style.status_code == 200
+    assert ".awc-timeline-chart" in timeline_style.text
+    assert '[data-rain="true"]' in timeline_style.text
+
+    assert details_script.status_code == 200
+    assert details_script.headers["content-type"].startswith("text/javascript")
+    assert "awc-warning-facts" in details_script.text
+    assert "awc-test-notification" in details_script.text
+    assert details_style.status_code == 200
+    assert ".awc-alarm-capabilities" in details_style.text
+    assert ".awc-hazard-entry" in details_style.text
+
+    assert changes_script.status_code == 200
+    assert changes_script.headers["content-type"].startswith("text/javascript")
+    assert 'fetch(`${API}/changes`' in changes_script.text
+    assert "SERVER_HISTORY" in changes_script.text
+
+    assert navigation_script.status_code == 200
+    assert navigation_script.headers["content-type"].startswith("text/javascript")
+    assert 'nowcast: "JETZT"' in navigation_script.text
+    assert "awc-active-tab" in navigation_script.text
+    assert navigation_style.status_code == 200
+    assert ".awc-planning-windows" in navigation_style.text
+    assert ".awc-external-sources" in navigation_style.text
+
+
+def test_unknown_local_asset_is_not_exposed(tmp_path: Path) -> None:
+    response = client(tmp_path).get("/not-a-dashboard-asset.js")
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Asset not found"

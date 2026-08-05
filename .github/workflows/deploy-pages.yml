@@ -2,8 +2,7 @@ name: GitHub Pages
 
 on:
   push:
-    branches:
-      - main
+    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -22,24 +21,21 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
     steps:
-      - name: Repository auschecken
-        uses: actions/checkout@v7
-
-      - name: GitHub Pages konfigurieren
-        uses: actions/configure-pages@v6
-
-      - name: Öffentliches Seitenartefakt zusammenstellen
-        shell: bash
-        run: |
-          set -euo pipefail
-          mkdir _site
-          cp index.html 404.html .nojekyll site-build-info.json _site/
-
-      - name: GitHub-Pages-Artefakt hochladen
-        uses: actions/upload-pages-artifact@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - uses: actions/configure-pages@v6
+      - run: python scripts/build_public_site.py --output _site
+      - run: >-
+          python -c "import json,pathlib;
+          p=pathlib.Path('_site');
+          c=json.loads((p/'runtime-config.json').read_text());
+          assert c == {'mode':'PUBLIC','localApiAvailable':False,'apiBase':None};
+          assert not any(p.rglob('*.sqlite*'));
+          assert not any(p.rglob('config.local.json'))"
+      - uses: actions/upload-pages-artifact@v5
         with:
           path: _site
-
-      - name: GitHub Pages veröffentlichen
-        id: deployment
+      - id: deployment
         uses: actions/deploy-pages@v5

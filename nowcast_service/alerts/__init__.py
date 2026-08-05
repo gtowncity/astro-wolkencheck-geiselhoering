@@ -1,0 +1,1 @@
+"""Alarm transition engine."""
