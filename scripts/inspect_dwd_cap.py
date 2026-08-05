@@ -60,6 +60,9 @@ def inspect_xml(content: bytes, name: str) -> dict[str, Any]:
         "severity": first_text(root, "severity"),
         "certainty": first_text(root, "certainty"),
         "urgency": first_text(root, "urgency"),
+        "effective": first_text(root, "effective"),
+        "onset": first_text(root, "onset"),
+        "expires": first_text(root, "expires"),
         "tagCounts": tags,
     }
 
@@ -116,13 +119,14 @@ async def inspect_product(
         raise RuntimeError(f"CAP archive validation failed: {exc}") from exc
 
     samples: list[dict[str, Any]] = []
-    semantic_failures: list[dict[str, str]] = []
+    semantic_failures: list[dict[str, Any]] = []
     semantic_parsed = 0
     with zipfile.ZipFile(archive, "r") as bundle:
         for index, info in enumerate(infos):
             content = bundle.read(info)
+            summary = inspect_xml(content, info.filename)
             if index < 3:
-                samples.append(inspect_xml(content, info.filename))
+                samples.append(summary)
             try:
                 parse_cap_xml(content)
                 semantic_parsed += 1
@@ -132,10 +136,11 @@ async def inspect_product(
                         {
                             "name": info.filename,
                             "error": f"{type(exc).__name__}: {exc}",
+                            "summary": summary,
                         }
                     )
 
-    result = {
+    return {
         "product": spec.product,
         "candidate": {
             "name": candidate.name,
@@ -156,14 +161,6 @@ async def inspect_product(
         "semanticFailures": semantic_failures,
         "samples": samples,
     }
-    if semantic_failures:
-        first = semantic_failures[0]
-        raise RuntimeError(
-            "CAP semantic parsing failed for "
-            f"{len(infos) - semantic_parsed}/{len(infos)} members; "
-            f"first={first['name']}: {first['error']}"
-        )
-    return result
 
 
 async def run(output: Path) -> None:
@@ -191,7 +188,11 @@ async def run(output: Path) -> None:
                 encoding="utf-8",
             )
             print(output.read_text(encoding="utf-8"))
-            if any("error" in product for product in report["products"]):
+            failed = any(
+                "error" in product or int(product.get("semanticFailureCount", 0)) > 0
+                for product in report["products"]
+            )
+            if failed:
                 raise SystemExit(1)
 
 
