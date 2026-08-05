@@ -1,0 +1,54 @@
+name: Feature CI
+
+on:
+  push:
+    branches:
+      - feature/dwd-nowcast-v4.3
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: feature-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  safety-core:
+    name: Safety core (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - windows-latest
+
+    steps:
+      - name: Repository auschecken
+        uses: actions/checkout@v6
+
+      - name: Python 3.12 einrichten
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Abhängigkeiten installieren
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev]"
+
+      - name: Ruff
+        run: python -m ruff check nowcast_service tests
+
+      - name: Mypy
+        run: python -m mypy nowcast_service
+
+      - name: Tests mit Branch-Coverage
+        run: >-
+          python -m pytest
+          --cov=nowcast_service
+          --cov-branch
+          --cov-report=term-missing
+          --cov-fail-under=90
