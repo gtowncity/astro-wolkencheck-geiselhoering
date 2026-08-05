@@ -2,7 +2,7 @@ import io
 import os
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from types import SimpleNamespace
+from typing import ClassVar
 
 import httpx
 import pytest
@@ -16,6 +16,7 @@ from nowcast_service.satellite_image import (
     SatelliteFrame,
     SatelliteImageError,
     SatelliteImageService,
+    SatelliteProduct,
     _draw_location_pin,
     _parse_duration,
     _validated_image,
@@ -49,7 +50,12 @@ def capabilities_xml() -> bytes:
 
 
 def test_parse_duration_and_time_dimension() -> None:
-    assert _parse_duration("P1DT2H3M4S") == timedelta(days=1, hours=2, minutes=3, seconds=4)
+    assert _parse_duration("P1DT2H3M4S") == timedelta(
+        days=1,
+        hours=2,
+        minutes=3,
+        seconds=4,
+    )
     with pytest.raises(ValueError, match="Unsupported"):
         _parse_duration("monthly")
 
@@ -77,7 +83,12 @@ def test_parse_duration_and_time_dimension() -> None:
 
 
 def test_location_projection_and_wms_axis_order() -> None:
-    x, y = location_to_pixel(latitude=48.84, longitude=12.40, width=1200, height=850)
+    x, y = location_to_pixel(
+        latitude=48.84,
+        longitude=12.40,
+        width=1200,
+        height=850,
+    )
     assert 0 < x < 1200
     assert 0 < y < 850
     assert _wms_bbox() == "47.0,8.75,50.75,14.05"
@@ -156,10 +167,14 @@ async def test_metadata_reports_products_frames_and_freshness(
     assert payload["satellite"] == "Meteosat-12 / MTG-I1 / FCI"
     assert payload["selectedProduct"]["key"] == "geocolour"
     assert payload["frames"][-1] == current.isoformat().replace("+00:00", "Z")
-    geocolour = next(item for item in payload["products"] if item["key"] == "geocolour")
+    geocolour = next(
+        item for item in payload["products"] if item["key"] == "geocolour"
+    )
     assert geocolour["available"] is True
     assert geocolour["fresh"] is True
-    assert payload["freshnessLimitMinutes"] == int(FRESHNESS_LIMIT.total_seconds() / 60)
+    assert payload["freshnessLimitMinutes"] == int(
+        FRESHNESS_LIMIT.total_seconds() / 60
+    )
 
     with pytest.raises(SatelliteImageError, match="Unknown"):
         await service.metadata("does-not-exist")
@@ -174,10 +189,10 @@ async def test_render_uses_selected_product_frame_and_pin(
     observed = datetime(2026, 8, 5, 12, 0, tzinfo=UTC)
 
     async def fake_frame_image(
-        product: object,
+        product: SatelliteProduct,
         frame: SatelliteFrame,
     ) -> tuple[Image.Image, bool]:
-        assert getattr(product, "key") == "infrared"
+        assert product.key == "infrared"
         assert frame.observed_at == observed
         return Image.new("RGB", (120, 80), (20, 30, 40)), False
 
@@ -258,7 +273,7 @@ async def test_frame_cache_hit_and_download_miss(
     path.unlink()
 
     async def fake_download(
-        selected: object,
+        selected: SatelliteProduct,
         selected_frame: SatelliteFrame,
     ) -> Image.Image:
         assert selected is product
@@ -306,7 +321,7 @@ class FakeResponse:
 class FakeAsyncClient:
     response = FakeResponse(content=b"")
     last_url = ""
-    last_params: dict[str, str] = {}
+    last_params: ClassVar[dict[str, str]] = {}
 
     def __init__(self, **_: object) -> None:
         pass
@@ -336,8 +351,14 @@ async def test_http_downloads_validate_capabilities_and_frames(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     service = SatelliteImageService(tmp_path)
-    monkeypatch.setattr("nowcast_service.satellite_image.httpx.AsyncClient", FakeAsyncClient)
-    FakeAsyncClient.response = FakeResponse(content=capabilities_xml(), content_type="text/xml")
+    monkeypatch.setattr(
+        "nowcast_service.satellite_image.httpx.AsyncClient",
+        FakeAsyncClient,
+    )
+    FakeAsyncClient.response = FakeResponse(
+        content=capabilities_xml(),
+        content_type="text/xml",
+    )
     assert await service._download_capabilities() == capabilities_xml()
     assert FakeAsyncClient.last_url == EUMETVIEW_WMS_URL
     assert FakeAsyncClient.last_params["request"] == "GetCapabilities"
@@ -360,7 +381,11 @@ async def test_http_downloads_validate_capabilities_and_frames(
     response = httpx.Response(503, request=request)
     FakeAsyncClient.response = FakeResponse(
         content=b"",
-        error=httpx.HTTPStatusError("unavailable", request=request, response=response),
+        error=httpx.HTTPStatusError(
+            "unavailable",
+            request=request,
+            response=response,
+        ),
     )
     with pytest.raises(SatelliteImageError, match="capabilities unavailable"):
         await service._download_capabilities()
