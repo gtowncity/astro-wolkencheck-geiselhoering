@@ -106,7 +106,9 @@ def test_warning_latch_and_alarm_details_are_structured() -> None:
         install_doubles(page)
         page.route("**/*", route_request)
         page.goto("http://awc.test/")
-        page.locator(".awc-warning-facts").wait_for()
+        page.locator(".awc-warning-facts").wait_for(state="attached")
+        page.locator("#awc-warning-list details summary").first.click()
+        page.locator(".awc-warning-facts").wait_for(state="visible")
 
         warning_text = page.locator(".awc-warning-facts").inner_text()
         assert "Dringlichkeit" in warning_text and "erwartet" in warning_text
