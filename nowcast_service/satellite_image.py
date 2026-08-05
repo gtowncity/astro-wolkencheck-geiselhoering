@@ -6,6 +6,7 @@ import asyncio
 import hashlib
 import io
 import math
+import os
 import re
 import ssl
 from dataclasses import asdict, dataclass
@@ -82,6 +83,21 @@ PRODUCTS_BY_KEY: Final = {product.key: product for product in PRODUCTS}
 _DURATION_PATTERN: Final = re.compile(
     r"^P(?:(?P<days>\d+)D)?(?:T(?:(?P<hours>\d+)H)?(?:(?P<minutes>\d+)M)?"
     r"(?:(?P<seconds>\d+(?:\.\d+)?)S)?)?$"
+)
+_TEXT_FALLBACKS: Final = str.maketrans(
+    {
+        "ä": "ae",
+        "ö": "oe",
+        "ü": "ue",
+        "Ä": "Ae",
+        "Ö": "Oe",
+        "Ü": "Ue",
+        "ß": "ss",
+        "µ": "u",
+        "·": "-",
+        "–": "-",
+        "—": "-",
+    }
 )
 
 
@@ -228,6 +244,51 @@ def _validated_image(content: bytes) -> Image.Image:
         raise SatelliteImageError("EUMETSAT response is not a valid raster image") from exc
 
 
+def _font_candidates() -> tuple[Path, ...]:
+    candidates: list[Path] = []
+    windows_directory = os.environ.get("WINDIR")
+    if windows_directory:
+        windows_fonts = Path(windows_directory) / "Fonts"
+        candidates.extend(
+            (
+                windows_fonts / "segoeui.ttf",
+                windows_fonts / "arial.ttf",
+            )
+        )
+    candidates.extend(
+        (
+            Path("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"),
+            Path("/usr/share/fonts/truetype/liberation2/LiberationSans-Regular.ttf"),
+            Path("/System/Library/Fonts/Supplemental/Arial.ttf"),
+        )
+    )
+    return tuple(candidates)
+
+
+def _label_font(
+    size: int,
+) -> tuple[ImageFont.ImageFont | ImageFont.FreeTypeFont, bool]:
+    """Load a Unicode-capable system font without bundling font files."""
+
+    for candidate in _font_candidates():
+        if not candidate.is_file():
+            continue
+        try:
+            return ImageFont.truetype(str(candidate), size=size), True
+        except OSError:
+            continue
+    try:
+        return ImageFont.truetype("DejaVuSans.ttf", size=size), True
+    except OSError:
+        return ImageFont.load_default(size=size), False
+
+
+def _label_text(value: str, *, unicode_supported: bool) -> str:
+    """Preserve Unicode when possible and provide a readable ASCII fallback."""
+
+    return value if unicode_supported else value.translate(_TEXT_FALLBACKS)
+
+
 def _draw_location_pin(
     image: Image.Image,
     *,
@@ -239,8 +300,8 @@ def _draw_location_pin(
 ) -> bytes:
     canvas = image.copy()
     draw = ImageDraw.Draw(canvas, "RGBA")
-    font = ImageFont.load_default(size=21)
-    small_font = ImageFont.load_default(size=17)
+    font, font_unicode = _label_font(21)
+    small_font, small_font_unicode = _label_font(17)
     x, y = location_to_pixel(
         latitude=latitude,
         longitude=longitude,
@@ -263,6 +324,7 @@ def _draw_location_pin(
     draw.ellipse((x - 5, y - 5, x + 5, y + 5), fill=(255, 255, 255, 255))
 
     safe_name = location_name.strip()[:80] or "Ausgewählter Ort"
+    safe_name = _label_text(safe_name, unicode_supported=font_unicode)
     label_box = draw.textbbox((0, 0), safe_name, font=font)
     label_width = label_box[2] - label_box[0] + 24
     label_height = label_box[3] - label_box[1] + 18
@@ -285,6 +347,10 @@ def _draw_location_pin(
     provenance = (
         f"EUMETSAT Meteosat-12 / MTG-FCI · {product.title} · "
         f"Aufnahme {observed_at.astimezone(UTC):%d.%m.%Y %H:%M UTC}"
+    )
+    provenance = _label_text(
+        provenance,
+        unicode_supported=small_font_unicode,
     )
     box = draw.textbbox((0, 0), provenance, font=small_font)
     width = min(canvas.width - 20, box[2] - box[0] + 24)
@@ -605,6 +671,4 @@ class SatelliteImageService:
         timestamp = fetched_at.timestamp()
         self._capabilities_path.touch()
         self._capabilities_path.chmod(0o600)
-        import os
-
         os.utime(self._capabilities_path, (timestamp, timestamp))
