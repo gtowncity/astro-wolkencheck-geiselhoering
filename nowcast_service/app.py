@@ -16,6 +16,10 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 from nowcast_service import __version__
 from nowcast_service.config import AppConfig, ConfigStore
 from nowcast_service.decision_engine import EquipmentState, RiskState
+from nowcast_service.runtime.change_summary import (
+    ChangeSummaryError,
+    recent_change_summary,
+)
 from nowcast_service.runtime.coordinator import RuntimeCoordinator
 from nowcast_service.security import CSRF_COOKIE, new_csrf_token, require_csrf
 from nowcast_service.sources.runtime_base import SourceRunner
@@ -33,6 +37,7 @@ SCRIPT_ASSETS = (
     "local-live.js",
     "local-live-timeline.js",
     "local-live-details.js",
+    "local-live-changes.js",
     "local-live-navigation.js",
 )
 LOCAL_ASSETS = {
@@ -257,6 +262,17 @@ def create_app(
     @application.get("/api/v1/diagnostics")
     def diagnostics() -> dict[str, object]:
         return coordinator.diagnostics_dict()
+
+    @application.get("/api/v1/changes")
+    def changes() -> dict[str, object]:
+        database_path = config_store.data_dir / "database" / "runtime.sqlite3"
+        try:
+            return recent_change_summary(database_path)
+        except ChangeSummaryError as exc:
+            raise HTTPException(
+                status_code=503,
+                detail="Decision history unavailable",
+            ) from exc
 
     @application.get("/api/v1/config/public")
     def public_config() -> dict[str, object]:
