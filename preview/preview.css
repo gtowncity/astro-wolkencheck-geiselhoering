@@ -26,13 +26,25 @@ body {
   letter-spacing: 0.08em;
 }
 
+#preview-app {
+  width: min(1160px, calc(100% - 24px));
+  margin: 1rem auto 0;
+}
+
+#preview-app > .tabs-shell,
+#preview-app > #overviewContent {
+  display: none !important;
+}
+
 #preview-controls {
   display: flex;
   flex-wrap: wrap;
   gap: 0.55rem;
   align-items: center;
-  padding: 0.9rem clamp(1rem, 3vw, 2rem);
-  border-bottom: 1px solid rgb(255 255 255 / 16%);
+  margin-top: 0.75rem;
+  padding: 0.9rem;
+  border: 1px solid rgb(255 255 255 / 16%);
+  border-radius: 0.65rem;
   background: #181b21;
 }
 
