@@ -24,6 +24,16 @@ class DataQuality(StrEnum):
     INSUFFICIENT = "INSUFFICIENT"
 
 
+class SourceState(StrEnum):
+    INITIALIZING = "INITIALIZING"
+    LIVE = "LIVE"
+    STALE = "STALE"
+    FAILED = "FAILED"
+    DISABLED = "DISABLED"
+    NOT_CONFIGURED = "NOT_CONFIGURED"
+    NOT_AVAILABLE = "NOT_AVAILABLE"
+
+
 class EquipmentState(StrEnum):
     NOT_DEPLOYED = "NOT_DEPLOYED"
     DEPLOYED_ATTENDED = "DEPLOYED_ATTENDED"
@@ -39,6 +49,7 @@ class Action(StrEnum):
     SETUP_POSSIBLE_WITH_CAUTION = "SETUP_POSSIBLE_WITH_CAUTION"
     NO_LIVE_VETO_DETECTED = "NO_LIVE_VETO_DETECTED"
     UNKNOWN_DO_NOT_RELY = "UNKNOWN_DO_NOT_RELY"
+    NOT_CONNECTED = "NOT_CONNECTED"
 
 
 @dataclass(frozen=True, slots=True)
@@ -54,8 +65,25 @@ class Evidence:
 class SourceHealth:
     source: str
     required: bool
-    healthy: bool
+    state: SourceState
     supporting: bool = False
+    detail: str | None = None
+
+    @property
+    def healthy_for_green(self) -> bool:
+        """Return whether this source may participate in a GREEN decision."""
+
+        return self.state is SourceState.LIVE
+
+    @property
+    def optional_and_inactive(self) -> bool:
+        """Return whether an optional source is intentionally not in use."""
+
+        return not self.required and self.state in {
+            SourceState.DISABLED,
+            SourceState.NOT_CONFIGURED,
+            SourceState.NOT_AVAILABLE,
+        }
 
 
 @dataclass(frozen=True, slots=True)
@@ -67,13 +95,31 @@ class SafetyDecision:
     reasons: tuple[str, ...]
 
 
-def _data_quality(source_health: Iterable[SourceHealth]) -> DataQuality:
-    sources = tuple(source_health)
-    required = tuple(source for source in sources if source.required)
+def _required_failures(source_health: tuple[SourceHealth, ...]) -> tuple[SourceHealth, ...]:
+    required = tuple(source for source in source_health if source.required)
+    if not required:
+        return (
+            SourceHealth(
+                source="SAFETY_CORE",
+                required=True,
+                state=SourceState.NOT_CONFIGURED,
+                detail="Keine erforderlichen Live-Quellen sind konfiguriert.",
+            ),
+        )
+    return tuple(source for source in required if not source.healthy_for_green)
 
-    if any(not source.healthy for source in required):
+
+def _data_quality(source_health: tuple[SourceHealth, ...]) -> DataQuality:
+    if _required_failures(source_health):
         return DataQuality.INSUFFICIENT
-    if any(not source.healthy for source in sources if source.supporting):
+
+    degraded_supporting = any(
+        source.supporting
+        and not source.healthy_for_green
+        and not source.optional_and_inactive
+        for source in source_health
+    )
+    if degraded_supporting:
         return DataQuality.DEGRADED
     return DataQuality.COMPLETE
 
@@ -98,11 +144,27 @@ def _action_for(state: RiskState, equipment: EquipmentState) -> Action:
         if equipment in {
             EquipmentState.DEPLOYED_ATTENDED,
             EquipmentState.DEPLOYED_UNATTENDED,
+            EquipmentState.UNKNOWN,
         }:
             return Action.CHECK_EQUIPMENT_IMMEDIATELY
         return Action.UNKNOWN_DO_NOT_RELY
 
     return Action.NO_LIVE_VETO_DETECTED
+
+
+def _unknown_reasons(failures: tuple[SourceHealth, ...]) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    codes: list[str] = []
+    reasons: list[str] = []
+    for source in failures:
+        codes.append(f"SOURCE_{source.source}_{source.state}")
+        reasons.append(
+            source.detail
+            or (
+                f"Erforderliche Quelle {source.source} ist nicht frisch und gueltig "
+                f"({source.state})."
+            )
+        )
+    return tuple(codes), tuple(reasons)
 
 
 def evaluate_safety(
@@ -126,21 +188,26 @@ def evaluate_safety(
 
     if red:
         state = RiskState.RED
-        selected = red
+        codes = tuple(item.reason_code for item in red)
+        reasons = tuple(item.reason for item in red)
     elif yellow:
         state = RiskState.YELLOW
-        selected = yellow
-    elif quality is DataQuality.INSUFFICIENT:
-        state = RiskState.UNKNOWN
-        selected = ()
+        codes = tuple(item.reason_code for item in yellow)
+        reasons = tuple(item.reason for item in yellow)
     else:
-        state = RiskState.GREEN
-        selected = ()
+        failures = _required_failures(health)
+        if failures:
+            state = RiskState.UNKNOWN
+            codes, reasons = _unknown_reasons(failures)
+        else:
+            state = RiskState.GREEN
+            codes = ()
+            reasons = ()
 
     return SafetyDecision(
         state=state,
         data_quality=quality,
         action=_action_for(state, equipment_state),
-        reason_codes=tuple(item.reason_code for item in selected),
-        reasons=tuple(item.reason for item in selected),
+        reason_codes=codes,
+        reasons=reasons,
     )
