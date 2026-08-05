@@ -180,11 +180,11 @@ async def inspect_product(
             latitude=LATITUDE,
             resolver=resolver,
         )
-        unresolved_in_force = [
-            summary
-            for alert in resolved.location.unresolved
-            if (summary := unresolved_summary(alert, now=now)) is not None
-        ]
+        unresolved_in_force: list[dict[str, Any]] = []
+        for alert in resolved.location.unresolved:
+            item = unresolved_summary(alert, now=now)
+            if item is not None:
+                unresolved_in_force.append(item)
         location_resolution = {
             "site": {"longitude": LONGITUDE, "latitude": LATITUDE},
             "siteWarningCellIds": list(resolver.ids_covering(LONGITUDE, LATITUDE)),
