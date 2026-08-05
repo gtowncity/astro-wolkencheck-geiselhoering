@@ -1,4 +1,4 @@
-"""Live structure and semantic smoke test for current DWD CAP status archives."""
+"""Live structure, semantic and site-resolution smoke test for DWD CAP archives."""
 
 from __future__ import annotations
 
@@ -17,6 +17,7 @@ from defusedxml import ElementTree
 from nowcast_service.downloads.remote import DownloadError, DownloadLimits, download_atomic
 from nowcast_service.downloads.safe_zip import UnsafeZipError, validate_zip
 from nowcast_service.sources.cap_parser import parse_cap_xml
+from nowcast_service.sources.cap_snapshot import load_cap_archive
 from nowcast_service.sources.dwd_cap_directory import (
     CAP_CELLS_SPEC,
     CAP_COMMUNE_SPEC,
@@ -24,6 +25,10 @@ from nowcast_service.sources.dwd_cap_directory import (
     CapProductSpec,
     DwdCapDirectoryClient,
 )
+from nowcast_service.sources.warning_area_index import DwdWarningAreaClient
+
+LONGITUDE = 12.40
+LATITUDE = 48.84
 
 
 def local_name(tag: str) -> str:
@@ -107,8 +112,33 @@ async def download_first_valid(
     raise RuntimeError(f"No usable CAP candidate for {spec.product}: {attempts}")
 
 
+def unresolved_summary(alert: Any, *, now: datetime) -> dict[str, Any] | None:
+    info = alert.german_info()
+    if info is None or not info.is_in_force(now):
+        return None
+    geocodes = sorted(
+        {
+            f"{code.name}={code.value}"
+            for area in info.areas
+            for code in area.geocodes
+        }
+    )
+    return {
+        "identifier": alert.identifier,
+        "event": info.event,
+        "headline": info.headline,
+        "areaDescriptions": [area.description for area in info.areas],
+        "geocodes": geocodes,
+    }
+
+
 async def inspect_product(
-    client: httpx.AsyncClient, spec: CapProductSpec, root: Path
+    client: httpx.AsyncClient,
+    spec: CapProductSpec,
+    root: Path,
+    *,
+    now: datetime,
+    resolver: Any | None = None,
 ) -> dict[str, Any]:
     candidate, archive, attempts = await download_first_valid(
         client, spec, root / spec.product
@@ -140,6 +170,31 @@ async def inspect_product(
                         }
                     )
 
+    location_resolution: dict[str, Any] | None = None
+    if resolver is not None:
+        resolved = await asyncio.to_thread(
+            load_cap_archive,
+            archive,
+            now=now,
+            longitude=LONGITUDE,
+            latitude=LATITUDE,
+            resolver=resolver,
+        )
+        unresolved_in_force: list[dict[str, Any]] = []
+        for alert in resolved.location.unresolved:
+            item = unresolved_summary(alert, now=now)
+            if item is not None:
+                unresolved_in_force.append(item)
+        location_resolution = {
+            "site": {"longitude": LONGITUDE, "latitude": LATITUDE},
+            "siteWarningCellIds": list(resolver.ids_covering(LONGITUDE, LATITUDE)),
+            "matchedCount": len(resolved.location.matched),
+            "nonmatchingCount": len(resolved.location.nonmatching),
+            "unresolvedCount": len(resolved.location.unresolved),
+            "inForceUnresolvedCount": len(unresolved_in_force),
+            "inForceUnresolved": unresolved_in_force[:20],
+        }
+
     return {
         "product": spec.product,
         "candidate": {
@@ -159,6 +214,7 @@ async def inspect_product(
         "semanticParsed": semantic_parsed,
         "semanticFailureCount": len(infos) - semantic_parsed,
         "semanticFailures": semantic_failures,
+        "locationResolution": location_resolution,
         "samples": samples,
     }
 
@@ -166,17 +222,50 @@ async def inspect_product(
 async def run(output: Path) -> None:
     timeout = httpx.Timeout(connect=20, read=90, write=30, pool=20)
     limits = httpx.Limits(max_connections=2, max_keepalive_connections=1)
+    now = datetime.now(UTC)
     async with httpx.AsyncClient(timeout=timeout, limits=limits) as client:
         with tempfile.TemporaryDirectory(prefix="astro-cap-smoke-") as temporary:
             report: dict[str, Any] = {
-                "generatedAt": datetime.now(UTC).isoformat(),
-                "purpose": "live CAP structure and semantic verification; not a safety decision",
+                "generatedAt": now.isoformat(),
+                "purpose": (
+                    "live CAP structure, semantic and Geiselhoering location verification; "
+                    "not a safety decision"
+                ),
+                "warningArea": {},
                 "products": [],
             }
+            warning_index: Any | None = None
+            try:
+                warning_index = await DwdWarningAreaClient(client).fetch(
+                    longitude=LONGITUDE,
+                    latitude=LATITUDE,
+                    retrieved_at=now,
+                )
+                report["warningArea"] = {
+                    "sourceSha256": warning_index.source_sha256,
+                    "featureCount": len(warning_index.areas),
+                    "siteWarningCellIds": list(
+                        warning_index.ids_covering(LONGITUDE, LATITUDE)
+                    ),
+                }
+            except Exception as exc:
+                report["warningArea"] = {"error": f"{type(exc).__name__}: {exc}"}
+
             for spec in (CAP_COMMUNE_SPEC, CAP_CELLS_SPEC):
                 try:
+                    resolver = (
+                        warning_index
+                        if spec.product == CAP_COMMUNE_SPEC.product
+                        else None
+                    )
                     report["products"].append(
-                        await inspect_product(client, spec, Path(temporary))
+                        await inspect_product(
+                            client,
+                            spec,
+                            Path(temporary),
+                            now=now,
+                            resolver=resolver,
+                        )
                     )
                 except Exception as exc:
                     report["products"].append(
@@ -188,8 +277,15 @@ async def run(output: Path) -> None:
                 encoding="utf-8",
             )
             print(output.read_text(encoding="utf-8"))
-            failed = any(
-                "error" in product or int(product.get("semanticFailureCount", 0)) > 0
+            failed = "error" in report["warningArea"] or any(
+                "error" in product
+                or int(product.get("semanticFailureCount", 0)) > 0
+                or int(
+                    (product.get("locationResolution") or {}).get(
+                        "inForceUnresolvedCount", 0
+                    )
+                )
+                > 0
                 for product in report["products"]
             )
             if failed:

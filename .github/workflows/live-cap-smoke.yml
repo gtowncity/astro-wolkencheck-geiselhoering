@@ -11,6 +11,7 @@ on:
       - nowcast_service/sources/cap_parser.py
       - nowcast_service/sources/cap_snapshot.py
       - nowcast_service/sources/cap_runtime.py
+      - nowcast_service/sources/warning_area_index.py
       - nowcast_service/downloads/remote.py
       - nowcast_service/downloads/safe_zip.py
       - pyproject.toml
