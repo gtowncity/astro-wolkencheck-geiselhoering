@@ -93,7 +93,7 @@ class CapInfo:
     certainty: str
     effective: datetime | None
     onset: datetime | None
-    expires: datetime
+    expires: datetime | None
     sender_name: str | None
     headline: str | None
     description: str | None
@@ -121,9 +121,17 @@ class CapInfo:
         return LocationMatch.UNKNOWN
 
     def is_in_force(self, now: datetime) -> bool:
+        """Apply the local policy for CAP's optional ``expires`` field.
+
+        The DWD status ZIP is a complete current-state archive. An Actual
+        Alert/Update without an explicit expiry therefore remains in force
+        while it is present in a fresh complete archive and has already begun.
+        A later complete archive removes or supersedes it.
+        """
+
         _require_aware(now, "now")
         start = self.onset or self.effective
-        return (start is None or start <= now) and now < self.expires
+        return (start is None or start <= now) and (self.expires is None or now < self.expires)
 
 
 @dataclass(frozen=True, slots=True)
@@ -154,10 +162,10 @@ class CapAlert:
 
     def is_displayable(self, now: datetime) -> bool:
         _require_aware(now, "now")
-        if not self.is_public_actual() or self.message_type == "Cancel":
+        if not self.is_public_actual() or self.message_type not in {"Alert", "Update"}:
             return False
         info = self.german_info()
-        return info is not None and now < info.expires
+        return info is not None and info.is_in_force(now)
 
 
 @dataclass(frozen=True, slots=True)
@@ -309,7 +317,7 @@ def _info(element: Element) -> CapInfo:
             required=False,
         ),
         onset=_timestamp(_text(element, "onset"), "onset", required=False),
-        expires=_required_timestamp(element, "expires"),
+        expires=_timestamp(_text(element, "expires"), "expires", required=False),
         sender_name=_text(element, "senderName"),
         headline=_text(element, "headline"),
         description=_text(element, "description"),
