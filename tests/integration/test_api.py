@@ -101,5 +101,5 @@ def test_root_serves_existing_forecast_application(tmp_path: Path) -> None:
     response = client(tmp_path).get("/")
 
     assert response.status_code == 200
-    assert "Astro-Wolkencheck" in response.text
+    assert "<title>Astro Wolkencheck - Geiselhöring</title>" in response.text
     assert response.headers["x-content-type-options"] == "nosniff"
