@@ -169,7 +169,7 @@ def test_isolated_remote_pixel_is_filtered_but_small_area_is_retained() -> None:
     analysed = analyze_radar_frame(
         frame(
             0,
-            points=((50, 70, 2),) + cluster(80),
+            points=((50, 70, 2), *cluster(80)),
         ),
         longitude=0,
         latitude=0,
