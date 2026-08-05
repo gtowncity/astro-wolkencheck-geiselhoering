@@ -11,7 +11,9 @@
 
 .awc-satellite-viewer {
   display: grid;
+  width: 100%;
   min-width: 0;
+  max-width: 100%;
   gap: 8px;
   padding: 10px;
   background: #081019;
@@ -21,7 +23,9 @@
 .awc-satellite-toolbar,
 .awc-satellite-timeline {
   display: flex;
+  width: 100%;
   min-width: 0;
+  max-width: 100%;
   align-items: center;
   gap: 8px;
 }
@@ -33,6 +37,7 @@
 .awc-satellite-toolbar > div:first-child {
   display: grid;
   min-width: 0;
+  max-width: 100%;
   gap: 2px;
 }
 
@@ -45,18 +50,27 @@
 
 .awc-satellite-toolbar strong {
   font-size: .82rem;
+  overflow-wrap: anywhere;
 }
 
 .awc-satellite-actions {
   display: flex;
   min-width: 0;
+  max-width: 100%;
   align-items: end;
   gap: 6px;
+}
+
+.awc-satellite-actions > *,
+.awc-satellite-timeline > * {
+  min-width: 0;
+  max-width: 100%;
 }
 
 .awc-satellite-actions label {
   display: grid;
   min-width: 180px;
+  max-width: 100%;
   gap: 3px;
   color: var(--awc-muted, #a7b5c3);
   font-size: .62rem;
@@ -78,6 +92,8 @@
 
 .awc-satellite-actions select {
   width: 100%;
+  min-width: 0;
+  max-width: 100%;
   padding: 0 8px;
 }
 
@@ -107,6 +123,8 @@
 }
 
 .awc-satellite-status {
+  min-width: 0;
+  max-width: 100%;
   padding: 6px 8px;
   border-left: 3px solid var(--awc-unknown, #81909e);
   border-radius: 6px;
@@ -135,6 +153,8 @@
 .awc-satellite-viewport {
   position: relative;
   width: 100%;
+  min-width: 0;
+  max-width: 100%;
   aspect-ratio: 1200 / 850;
   overflow: hidden;
   border: 1px solid #31465a;
@@ -184,6 +204,7 @@
   right: 8px;
   bottom: 8px;
   display: flex;
+  max-width: calc(100% - 16px);
   gap: 4px;
   padding: 4px;
   border: 1px solid rgba(255, 255, 255, .2);
@@ -209,6 +230,8 @@
 
 .awc-satellite-timeline input[type="range"] {
   width: 100%;
+  min-width: 0;
+  max-width: 100%;
   accent-color: var(--awc-info, #69add9);
 }
 
@@ -217,13 +240,17 @@
   color: var(--awc-muted, #a7b5c3);
   font-size: .64rem;
   text-align: right;
+  overflow-wrap: anywhere;
 }
 
 .awc-satellite-note {
+  min-width: 0;
+  max-width: 100%;
   margin: 0;
   color: var(--awc-faint, #788898);
   font-size: .58rem;
   line-height: 1.4;
+  overflow-wrap: anywhere;
 }
 
 .awc-satellite-viewer:fullscreen {
@@ -252,6 +279,7 @@
 
   .awc-satellite-actions {
     display: grid;
+    width: 100%;
     grid-template-columns: minmax(0, 1fr) auto auto;
   }
 
@@ -281,11 +309,24 @@
   }
 
   .awc-satellite-actions {
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   }
 
   .awc-satellite-actions label {
     grid-column: 1 / -1;
+  }
+
+  .awc-satellite-actions button,
+  .awc-satellite-timeline button {
+    width: 100%;
+    min-width: 0;
+    padding-inline: 6px;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  .awc-satellite-timeline {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr);
   }
 
   .awc-satellite-viewport {
