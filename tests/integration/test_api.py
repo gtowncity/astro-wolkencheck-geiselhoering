@@ -108,9 +108,11 @@ def test_root_serves_existing_forecast_application_with_live_assets(tmp_path: Pa
         "/local-live.css",
         "/local-live-timeline.css",
         "/local-live-details.css",
+        "/local-live-navigation.css",
         "/local-live.js",
         "/local-live-timeline.js",
         "/local-live-details.js",
+        "/local-live-navigation.js",
     ):
         assert asset in response.text
     assert response.headers["x-content-type-options"] == "nosniff"
@@ -123,6 +125,8 @@ def test_local_live_enhancement_assets_are_served(tmp_path: Path) -> None:
     timeline_style = test_client.get("/local-live-timeline.css")
     details_script = test_client.get("/local-live-details.js")
     details_style = test_client.get("/local-live-details.css")
+    navigation_script = test_client.get("/local-live-navigation.js")
+    navigation_style = test_client.get("/local-live-navigation.css")
 
     assert timeline_script.status_code == 200
     assert timeline_script.headers["content-type"].startswith("text/javascript")
@@ -139,3 +143,18 @@ def test_local_live_enhancement_assets_are_served(tmp_path: Path) -> None:
     assert details_style.status_code == 200
     assert ".awc-alarm-capabilities" in details_style.text
     assert ".awc-hazard-entry" in details_style.text
+
+    assert navigation_script.status_code == 200
+    assert navigation_script.headers["content-type"].startswith("text/javascript")
+    assert 'nowcast: "JETZT"' in navigation_script.text
+    assert "awc-active-tab" in navigation_script.text
+    assert navigation_style.status_code == 200
+    assert ".awc-planning-windows" in navigation_style.text
+    assert ".awc-external-sources" in navigation_style.text
+
+
+def test_unknown_local_asset_is_not_exposed(tmp_path: Path) -> None:
+    response = client(tmp_path).get("/not-a-dashboard-asset.js")
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Asset not found"
