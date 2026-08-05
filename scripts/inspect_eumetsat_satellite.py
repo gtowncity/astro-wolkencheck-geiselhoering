@@ -9,7 +9,7 @@ import json
 import tempfile
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from PIL import Image
 
@@ -32,13 +32,20 @@ def parse_time(value: str) -> datetime:
 
 
 def red_pixel_count(content: bytes) -> int:
+    """Count red marker pixels without relying on Pillow's untyped core iterator."""
+
     with Image.open(io.BytesIO(content)) as opened:
         image: Image.Image = opened.convert("RGB")
-    return sum(
-        1
-        for red, green, blue in image.getdata()
-        if red > 180 and green < 90 and blue < 110
-    )
+        count = 0
+        for y in range(image.height):
+            for x in range(image.width):
+                red, green, blue = cast(
+                    tuple[int, int, int],
+                    image.getpixel((x, y)),
+                )
+                if red > 180 and green < 90 and blue < 110:
+                    count += 1
+        return count
 
 
 def generated_at() -> str:
