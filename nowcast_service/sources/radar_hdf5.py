@@ -78,8 +78,8 @@ class RadarFrameMetadata:
             and self.bottom_edge_m < y <= self.top_edge_m
         ):
             raise RadarHdf5Error("Location is outside the radar raster")
-        column = int(math.floor((x - self.left_edge_m) / self.xscale_m))
-        row = int(math.floor((self.top_edge_m - y) / self.yscale_m))
+        column = math.floor((x - self.left_edge_m) / self.xscale_m)
+        row = math.floor((self.top_edge_m - y) / self.yscale_m)
         if not (0 <= row < self.shape[0] and 0 <= column < self.shape[1]):
             raise RadarHdf5Error("Calculated location index is outside the radar raster")
         return GridIndex(row=row, column=column)
