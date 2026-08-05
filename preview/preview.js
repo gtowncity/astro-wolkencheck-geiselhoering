@@ -1,22 +1,26 @@
 (() => {
   "use strict";
 
-  const panel = document.getElementById("awc-live-panel");
   const banner = document.getElementById("preview-banner");
   const controls = document.getElementById("preview-controls");
-  const diagnostics = document.querySelector("#awc-live-panel a[href='/api/v1/diagnostics']");
 
-  if (panel && banner) {
-    document.body.insertBefore(banner, panel);
-  }
-  if (panel && controls) {
-    panel.insertAdjacentElement("afterend", controls);
+  function placePreviewChrome() {
+    const dashboard = document.getElementById("live-dashboard-root");
+    if (!dashboard) return false;
+
+    if (banner && banner.nextElementSibling !== dashboard) {
+      document.body.insertBefore(banner, dashboard);
+    }
+    if (controls && dashboard.nextElementSibling !== controls) {
+      dashboard.insertAdjacentElement("afterend", controls);
+    }
+    return true;
   }
 
-  diagnostics?.addEventListener("click", (event) => {
-    event.preventDefault();
-    window.alert("Die Diagnoseansicht ist in dieser statischen Vorschau deaktiviert.");
-  });
+  function waitForDashboard() {
+    if (placePreviewChrome()) return;
+    window.setTimeout(waitForDashboard, 50);
+  }
 
   for (const button of document.querySelectorAll("[data-preview-state]")) {
     button.addEventListener("click", () => {
@@ -33,5 +37,9 @@
     window.__awcPreviewDisconnect?.();
   });
 
-  document.querySelector("[data-preview-state='GREEN']")?.setAttribute("aria-pressed", "true");
+  document
+    .querySelector("[data-preview-state='GREEN']")
+    ?.setAttribute("aria-pressed", "true");
+
+  waitForDashboard();
 })();
