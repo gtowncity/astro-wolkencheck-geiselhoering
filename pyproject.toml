@@ -1,0 +1,58 @@
+[build-system]
+requires = ["hatchling>=1.27,<2"]
+build-backend = "hatchling.build"
+
+[project]
+name = "astro-wolkencheck-nowcast"
+version = "4.3.0.dev0"
+description = "Lokaler DWD-Nowcast- und Sicherheitsdienst fuer Astro-Wolkencheck Geiselhoering"
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+  "defusedxml>=0.7.1,<1",
+  "fastapi>=0.116,<1",
+  "h5py>=3.14,<4",
+  "httpx>=0.28,<1",
+  "netCDF4>=1.7,<2",
+  "numpy>=2.2,<3",
+  "pillow>=11.3,<12",
+  "platformdirs>=4.3,<5",
+  "pydantic>=2.11,<3",
+  "pyproj>=3.7,<4",
+  "pyserial>=3.5,<4",
+  "shapely>=2.1,<3",
+  "uvicorn[standard]>=0.35,<1",
+  "xarray>=2025.6,<2027",
+]
+
+[project.optional-dependencies]
+dev = [
+  "mypy>=1.17,<2",
+  "playwright>=1.54,<2",
+  "pytest>=8.4,<9",
+  "pytest-asyncio>=1.1,<2",
+  "pytest-cov>=6.2,<7",
+  "ruff>=0.12,<1",
+]
+build = [
+  "pyinstaller>=6.15,<7",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["nowcast_service"]
+
+[tool.pytest.ini_options]
+addopts = "-ra --strict-markers"
+testpaths = ["tests"]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+warn_unused_configs = true
