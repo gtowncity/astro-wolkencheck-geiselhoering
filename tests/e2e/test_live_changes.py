@@ -68,9 +68,14 @@ def test_server_history_replaces_and_survives_browser_change_copy() -> None:
             <html>
               <body>
                 <section id="live-dashboard-root">
-                  <ul id="awc-change-list">
-                    <li>Nur im Browser gespeicherter Vergleich.</li>
-                  </ul>
+                  <article class="awc-change-card">
+                    <div class="awc-card-head">
+                      <p id="awc-change-summary">Alter Browser-Vergleich.</p>
+                    </div>
+                    <ul id="awc-change-list">
+                      <li>Nur im Browser gespeicherter Vergleich.</li>
+                    </ul>
+                  </article>
                 </section>
               </body>
             </html>
@@ -93,6 +98,11 @@ def test_server_history_replaces_and_survives_browser_change_copy() -> None:
         page.add_script_tag(content=SCRIPT.read_text(encoding="utf-8"))
         page.locator("#awc-change-list[data-source='SERVER_HISTORY']").wait_for()
 
+        intro = page.locator("#awc-change-summary")
+        assert intro.inner_text() == (
+            "5 sicherheitsrelevante Änderungen seit dem vorherigen vollständigen "
+            "Snapshot."
+        )
         copy = page.locator("#awc-change-list").inner_text()
         assert "GREEN → YELLOW" in copy
         assert "12 km näher" in copy
@@ -103,6 +113,8 @@ def test_server_history_replaces_and_survives_browser_change_copy() -> None:
 
         page.evaluate(
             """
+            document.getElementById('awc-change-summary').textContent =
+              'Spätere widersprüchliche Einleitung.';
             const list = document.getElementById('awc-change-list');
             const item = document.createElement('li');
             item.textContent = 'Späterer Browser-Vergleich überschreibt die Historie.';
@@ -115,4 +127,5 @@ def test_server_history_replaces_and_survives_browser_change_copy() -> None:
         assert "Späterer Browser-Vergleich" not in page.locator(
             "#awc-change-list"
         ).inner_text()
+        assert "widersprüchliche" not in intro.inner_text()
         browser.close()
