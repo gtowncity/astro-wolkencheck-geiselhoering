@@ -32,6 +32,18 @@ def red_pixel_count(content: bytes) -> int:
     )
 
 
+def generated_at() -> str:
+    return datetime.now(UTC).isoformat().replace("+00:00", "Z")
+
+
+def write_report(path: Path, report: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(report, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+
+
 async def run(args: argparse.Namespace) -> dict[str, Any]:
     with tempfile.TemporaryDirectory(prefix="awc-satellite-smoke-") as temporary:
         service = SatelliteImageService(Path(temporary))
@@ -99,7 +111,7 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
             "imageSize": list(Image.open(io.BytesIO(result.png)).size),
             "redPinPixels": red_pixels,
             "cache": "HIT" if result.cached else "MISS",
-            "generatedAt": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
+            "generatedAt": generated_at(),
         }
         return report
 
@@ -127,12 +139,22 @@ def arguments() -> argparse.Namespace:
 
 def main() -> None:
     args = arguments()
-    report = asyncio.run(run(args))
-    args.report_output.parent.mkdir(parents=True, exist_ok=True)
-    args.report_output.write_text(
-        json.dumps(report, ensure_ascii=False, indent=2) + "\n",
-        encoding="utf-8",
-    )
+    try:
+        report = asyncio.run(run(args))
+    except Exception as exc:
+        report = {
+            "status": "FAIL",
+            "errorType": type(exc).__name__,
+            "error": str(exc),
+            "product": args.product,
+            "maximumAllowedAgeMinutes": args.maximum_age_minutes,
+            "minimumProducts": args.minimum_products,
+            "generatedAt": generated_at(),
+        }
+        write_report(args.report_output, report)
+        print(json.dumps(report, ensure_ascii=False))
+        raise
+    write_report(args.report_output, report)
     print(json.dumps(report, ensure_ascii=False))
 
 
