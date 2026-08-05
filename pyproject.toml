@@ -44,6 +44,9 @@ packages = ["nowcast_service"]
 [tool.pytest.ini_options]
 addopts = "-ra --strict-markers"
 testpaths = ["tests"]
+markers = [
+  "e2e: browser end-to-end tests that require an installed Playwright browser",
+]
 
 [tool.ruff]
 target-version = "py312"
