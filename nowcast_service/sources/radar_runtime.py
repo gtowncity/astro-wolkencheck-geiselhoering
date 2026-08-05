@@ -7,7 +7,7 @@ import ssl
 import tempfile
 from datetime import timedelta
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import httpx
 import truststore
@@ -17,10 +17,45 @@ from nowcast_service.decision_engine import SourceState
 from nowcast_service.runtime.models import SourceSnapshot, iso
 from nowcast_service.sources.runtime_base import SourceRunError
 
+if TYPE_CHECKING:
+    from nowcast_service.sources.radar_analysis import RadarFrameAnalysis, RingStatistics
+
 
 def _bearing_name(value: float) -> str:
     names = ("N", "NE", "E", "SE", "S", "SW", "W", "NW")
     return names[int((value + 22.5) // 45) % 8]
+
+
+def _ring_payload(ring: RingStatistics) -> dict[str, int | float | None]:
+    """Serialize one validated site-centred radar ring for the browser timeline."""
+
+    return {
+        "radiusKm": ring.radius_km,
+        "validFraction": ring.valid_fraction,
+        "wetPixelCount": ring.wet_pixel_count,
+        "maximumMm5Min": ring.maximum_mm_5min,
+        "wetP90Mm5Min": ring.wet_p90_mm_5min,
+    }
+
+
+def _frame_payload(frame: RadarFrameAnalysis) -> dict[str, Any]:
+    """Serialize one analysis frame without exposing raw radar arrays."""
+
+    nearest = frame.nearest_component
+    return {
+        "leadMinutes": frame.lead_minutes,
+        "coverageSufficient": frame.coverage_sufficient,
+        "validFractionSite": frame.valid_fraction_site,
+        "rainAtSite": frame.rain_at_site,
+        "siteWetPixelCount": frame.site_wet_pixel_count,
+        "siteIntensityMm5Min": frame.site_maximum_mm_5min,
+        "nearestDistanceKm": nearest.nearest_distance_km if nearest else None,
+        "nearestBearingDeg": nearest.nearest_bearing_deg if nearest else None,
+        "nearestDirection": _bearing_name(nearest.nearest_bearing_deg) if nearest else None,
+        "componentAreaKm2": nearest.area_km2 if nearest else None,
+        "componentMaximumMm5Min": nearest.maximum_mm_5min if nearest else None,
+        "rings": [_ring_payload(ring) for ring in frame.rings],
+    }
 
 
 class RadarSourceRunner:
@@ -128,9 +163,12 @@ class RadarSourceRunner:
                         "arrivalMinutes": arrival.estimate_minutes if arrival else None,
                         "arrivalWindow": (
                             {
+                                "earliestMinutes": arrival.earliest_minutes,
+                                "estimateMinutes": arrival.estimate_minutes,
+                                "latestMinutes": arrival.latest_minutes,
+                                "confidence": arrival.confidence,
                                 "earliest": arrival.earliest_minutes,
                                 "latest": arrival.latest_minutes,
-                                "confidence": arrival.confidence,
                             }
                             if arrival
                             else None
@@ -145,6 +183,10 @@ class RadarSourceRunner:
                         "peakIntensityMm5Min": analysis.maximum_site_amount_mm_5min,
                         "peakIntensityLeadMinutes": analysis.maximum_site_amount_lead_minutes,
                         "siteIntensityMm5Min": current.site_maximum_mm_5min if current else None,
+                        "frameTimeline": [
+                            _frame_payload(frame)
+                            for frame in sorted(analysis.frames, key=lambda item: item.lead_minutes)
+                        ],
                         "unit": "mm/5min",
                         "hazardHoldUntil": iso(evaluated_at + timedelta(minutes=hold_minutes)),
                     }
