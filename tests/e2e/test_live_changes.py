@@ -66,6 +66,7 @@ def test_server_history_replaces_and_survives_browser_change_copy() -> None:
             """
             <!doctype html>
             <html>
+              <head><base href="http://awc.test/"></head>
               <body>
                 <section id="live-dashboard-root">
                   <article class="awc-change-card">
