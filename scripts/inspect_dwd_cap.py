@@ -32,7 +32,7 @@ def local_name(tag: str) -> str:
 def first_text(root: ElementTree.Element, name: str) -> str | None:
     for element in root.iter():
         if local_name(element.tag) == name and element.text:
-            return element.text.strip()
+            return str(element.text).strip()
     return None
 
 
