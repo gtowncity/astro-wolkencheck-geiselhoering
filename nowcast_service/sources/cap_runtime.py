@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import ssl
-from datetime import timedelta
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -17,7 +17,7 @@ from nowcast_service.runtime.models import SourceSnapshot, iso
 from nowcast_service.sources.runtime_base import SourceRunError
 
 _CRITICAL_EVENT_TERMS = ("GEWITTER", "STARKREGEN", "DAUERREGEN")
-_HARDWARE_EVENT_TERMS = (*_CRITICAL_EVENT_TERMS, "REGEN", "WIND", "STURM", "ORKAN", "HAGEL")
+_HARDWARE_EVENT_TERMS = (*_CRITICAL_EVENT_TERMS, "REGEN", "WIND", "STURM", "ORKAN", "HAGEL", "BÖEN")
 
 
 def _cap_evidence(alerts: tuple[Any, ...]) -> tuple[Evidence, ...]:
@@ -46,6 +46,14 @@ def _cap_evidence(alerts: tuple[Any, ...]) -> tuple[Evidence, ...]:
             )
         )
     return tuple(evidence)
+
+
+def _bounded_error(candidate_name: str, exc: Exception) -> str:
+    detail = " ".join(str(exc).split())
+    if len(detail) > 220:
+        detail = detail[:217] + "..."
+    prefix = f"{candidate_name}:{type(exc).__name__}"
+    return f"{prefix}: {detail}" if detail else prefix
 
 
 class CapSourceRunner:
@@ -131,14 +139,18 @@ class CapSourceRunner:
                     invalid = self._config.thresholds.cap_invalid_after_minutes * 60
                     cycle_time = candidate.reference_time or evaluated_at
                     warnings: list[dict[str, Any]] = []
-                    expiries = []
+                    expiries: list[datetime] = []
+                    open_ended_count = 0
                     active_matched = []
                     for alert in result.location.matched:
                         info = alert.german_info()
                         if info is None or not info.is_in_force(evaluated_at):
                             continue
                         active_matched.append(alert)
-                        expiries.append(info.expires)
+                        if info.expires is None:
+                            open_ended_count += 1
+                        else:
+                            expiries.append(info.expires)
                         warnings.append(
                             {
                                 "identifier": alert.identifier,
@@ -149,6 +161,11 @@ class CapSourceRunner:
                                 "effective": iso(info.effective),
                                 "onset": iso(info.onset),
                                 "expires": iso(info.expires),
+                                "expirationPolicy": (
+                                    "CURRENT_COMPLETE_ARCHIVE_PRESENCE"
+                                    if info.expires is None
+                                    else "CAP_EXPIRES"
+                                ),
                                 "headline": info.headline,
                                 "description": info.description,
                                 "instruction": info.instruction,
@@ -158,6 +175,7 @@ class CapSourceRunner:
                     payload: dict[str, Any] = {
                         "active": warnings,
                         "activeCount": len(warnings),
+                        "openEndedActiveCount": open_ended_count,
                         "archiveEntries": result.archive_entries,
                         "parsedAlerts": result.parsed_alerts,
                         "unresolvedCount": len(result.location.unresolved),
@@ -183,8 +201,8 @@ class CapSourceRunner:
                         evidence=_cap_evidence(tuple(active_matched)),
                     )
                 except Exception as exc:
-                    errors.append(f"{candidate.name}:{type(exc).__name__}")
+                    errors.append(_bounded_error(candidate.name, exc))
         raise SourceRunError(
             "CAP_CYCLE_FAILED",
-            "No complete CAP candidate could be processed (" + ", ".join(errors[:5]) + ")",
+            "No complete CAP candidate could be processed (" + "; ".join(errors[:5]) + ")",
         )
