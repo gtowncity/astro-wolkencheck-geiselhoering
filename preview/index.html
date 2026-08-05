@@ -1,0 +1,242 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Astro-Wolkencheck v4.3 – Vorschau</title>
+  <link rel="stylesheet" href="../nowcast_service/static/local-live.css">
+  <link rel="stylesheet" href="./preview.css">
+  <script>
+    (() => {
+      "use strict";
+
+      const originalFetch = window.fetch.bind(window);
+      let currentState = "GREEN";
+      let currentSnapshot = null;
+      let currentAlert = null;
+      let sequence = 0;
+
+      const source = (sourceId, state, ageSeconds, payload = {}) => ({
+        sourceId,
+        state,
+        ageSeconds,
+        isComplete: state === "LIVE",
+        failureCode: state === "FAILED" ? "PREVIEW_SOURCE_FAILED" : null,
+        failureMessage: state === "FAILED" ? "Simulierter Quellenausfall in der Vorschau." : null,
+        payload,
+      });
+
+      const snapshotFor = (state) => {
+        const now = new Date();
+        const hazardous = state === "RED" || state === "YELLOW";
+        const reasonCode = state === "RED"
+          ? "CAP_RELEVANT_WARNING_RED"
+          : state === "YELLOW"
+            ? "RADAR_PRECIPITATION_APPROACHING"
+            : state === "UNKNOWN"
+              ? "SOURCE_DWD_RV_FAILED"
+              : "ALL_REQUIRED_SOURCES_CLEAR";
+        const reasons = {
+          GREEN: ["Kernquellen frisch, vollständig und ohne relevante Gefahr."],
+          YELLOW: ["Niederschlag nähert sich dem Standort."],
+          RED: ["Amtliche Gewitterwarnung am Standort."],
+          UNKNOWN: ["Radarquelle ist ausgefallen; Green ist gesperrt."],
+        };
+        const action = {
+          GREEN: "MAY_OPERATE",
+          YELLOW: "PREPARE_TO_PROTECT_EQUIPMENT",
+          RED: "COVER_EQUIPMENT_NOW",
+          UNKNOWN: "UNKNOWN_DO_NOT_RELY",
+        };
+        const radarState = state === "UNKNOWN" ? "FAILED" : "LIVE";
+        const capWarnings = state === "RED"
+          ? [{
+              event: "GEWITTER",
+              headline: "Amtliche Warnung vor Gewitter",
+              severity: "Moderate",
+              expires: new Date(now.getTime() + 45 * 60 * 1000).toISOString(),
+            }]
+          : [];
+        const hazards = hazardous
+          ? [{
+              hazardKey: state === "RED"
+                ? "DWD_CAP:CAP_RELEVANT_WARNING_RED"
+                : "DWD_RV:RADAR_PRECIPITATION_APPROACHING",
+              source: state === "RED" ? "DWD_CAP" : "DWD_RV",
+              state,
+              reasonCode,
+              reason: reasons[state][0],
+              holdUntil: new Date(now.getTime() + 30 * 60 * 1000).toISOString(),
+              clearCyclesRequired: 2,
+              clearStreak: 0,
+            }]
+          : [];
+
+        return {
+          schemaVersion: "1.1",
+          snapshotId: `preview-${state.toLowerCase()}-${++sequence}`,
+          evaluationAt: now.toISOString(),
+          configurationVersion: "preview",
+          equipmentState: "DEPLOYED",
+          earliestPossibleClearAt: hazardous
+            ? new Date(now.getTime() + 30 * 60 * 1000).toISOString()
+            : null,
+          hardwareRisk: {
+            state,
+            dataQuality: state === "UNKNOWN" ? "INCOMPLETE" : "COMPLETE",
+            action: action[state],
+            reasonCodes: [reasonCode],
+            reasons: reasons[state],
+          },
+          activeHazards: hazards,
+          sources: [
+            source("DWD_RV", radarState, 42, {
+              nearestPrecipitationDistanceKm: state === "YELLOW" ? 11.8 : 37.4,
+              nearestPrecipitationDirection: "WEST",
+              arrivalMinutes: state === "YELLOW" ? 24 : null,
+              siteIntensity: state === "RED" ? 0.8 : 0,
+              peakIntensity: state === "RED" ? 2.4 : 0.5,
+              intensityUnit: "mm/5min",
+              coverage0To120: state !== "UNKNOWN",
+            }),
+            source("DWD_CAP", "LIVE", 55, { active: capWarnings }),
+            source("DWD_WN", "DISABLED", null, {}),
+            source("LOCAL_PERSISTENCE", "LIVE", 0, {}),
+            source("RAIN_SENSOR", "DISABLED", null, {}),
+          ],
+        };
+      };
+
+      const alertFor = (state, snapshot) => {
+        if (state === "GREEN" || state === "UNKNOWN") {
+          return {
+            eventId: `preview-clear-${sequence}`,
+            snapshotId: snapshot.snapshotId,
+            eventType: "CLEARED",
+            riskState: state,
+            reasonCodes: snapshot.hardwareRisk.reasonCodes,
+            createdAt: snapshot.evaluationAt,
+            requiresAttention: false,
+            acknowledgedAt: null,
+          };
+        }
+        return {
+          eventId: `preview-alert-${state.toLowerCase()}-${sequence}`,
+          snapshotId: snapshot.snapshotId,
+          eventType: state,
+          riskState: state,
+          reasonCodes: snapshot.hardwareRisk.reasonCodes,
+          createdAt: snapshot.evaluationAt,
+          requiresAttention: true,
+          acknowledgedAt: null,
+        };
+      };
+
+      const response = (payload, status = 200) => new Response(JSON.stringify(payload), {
+        status,
+        headers: { "Content-Type": "application/json; charset=utf-8" },
+      });
+
+      const rebuild = (state) => {
+        currentState = state;
+        currentSnapshot = snapshotFor(state);
+        currentAlert = alertFor(state, currentSnapshot);
+      };
+
+      rebuild(currentState);
+
+      window.fetch = async (input, init = {}) => {
+        const url = new URL(typeof input === "string" ? input : input.url, window.location.href);
+        const path = url.pathname;
+        if (path === "/runtime-config.json") {
+          return response({
+            mode: "LOCAL_PREVIEW",
+            localApiAvailable: true,
+            apiBase: "/api/v1",
+            browserAudioEnabled: false,
+            browserNotificationsEnabled: false,
+          });
+        }
+        if (path === "/api/v1/safety" || path === "/api/v1/nowcast") {
+          return response(currentSnapshot);
+        }
+        if (path === "/api/v1/alerts") {
+          return response({ active: currentAlert });
+        }
+        if (path === "/api/v1/security/csrf") {
+          return response({ token: "preview-token" });
+        }
+        if (path.startsWith("/api/v1/") && (init.method || "GET").toUpperCase() === "POST") {
+          if (path.endsWith("/acknowledge") && currentAlert) {
+            currentAlert = {
+              ...currentAlert,
+              requiresAttention: false,
+              acknowledgedAt: new Date().toISOString(),
+            };
+          }
+          return response({ status: "PREVIEW_ACCEPTED" });
+        }
+        return originalFetch(input, init);
+      };
+
+      class PreviewEventSource {
+        constructor(url) {
+          this.url = url;
+          this.listeners = new Map();
+          window.__awcPreviewStream = this;
+          window.setTimeout(() => this.onopen?.(), 0);
+        }
+
+        addEventListener(type, callback) {
+          const callbacks = this.listeners.get(type) || [];
+          callbacks.push(callback);
+          this.listeners.set(type, callbacks);
+        }
+
+        emit(type, payload) {
+          const event = { data: JSON.stringify({ payload }) };
+          for (const callback of this.listeners.get(type) || []) callback(event);
+        }
+
+        close() {}
+      }
+
+      window.EventSource = PreviewEventSource;
+      window.__awcPreviewSetState = (state) => {
+        rebuild(state);
+        window.__awcPreviewStream?.emit("snapshot", currentSnapshot);
+        window.__awcPreviewStream?.emit("alert", currentAlert);
+        return currentSnapshot;
+      };
+      window.__awcPreviewDisconnect = () => {
+        window.__awcPreviewStream?.onerror?.(new Event("error"));
+      };
+    })();
+  </script>
+  <script src="../nowcast_service/static/local-live.js" defer></script>
+  <script src="./preview.js" defer></script>
+</head>
+<body>
+  <aside id="preview-banner" aria-label="Hinweis zur Vorschau">
+    <strong>DEMO / VISUELLE VORSCHAU</strong>
+    <span>Keine Live-Daten, keine Sicherheitsfreigabe und kein Ersatz für die lokal gestartete Anwendung.</span>
+  </aside>
+
+  <nav id="preview-controls" aria-label="Vorschauzustand auswählen">
+    <span>Zustand simulieren:</span>
+    <button type="button" data-preview-state="GREEN">GRÜN</button>
+    <button type="button" data-preview-state="YELLOW">GELB</button>
+    <button type="button" data-preview-state="RED">ROT</button>
+    <button type="button" data-preview-state="UNKNOWN">UNBEKANNT</button>
+    <button type="button" id="preview-disconnect">Verbindung trennen</button>
+  </nav>
+
+  <section id="forecast-preview" aria-labelledby="forecast-preview-title">
+    <header>
+      <h1 id="forecast-preview-title">Forecast-Anwendung unterhalb des Live-Kerns</h1>
+      <p>Die bestehende v4.2.1-Ansicht bleibt vollständig erhalten und wird lokal um das v4.3-Live-Panel ergänzt.</p>
+    </header>
+    <iframe title="Bestehende Astro-Wolkencheck-Forecast-Anwendung" src="../index.html"></iframe>
+  </section>
+</body>
+</html>
