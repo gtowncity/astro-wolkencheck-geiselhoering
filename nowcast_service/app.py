@@ -267,17 +267,37 @@ def create_app(
     def local_live_css() -> FileResponse:
         return FileResponse(PACKAGE_ROOT / "static" / "local-live.css", media_type="text/css")
 
+    @application.get("/local-live-timeline.js")
+    def local_live_timeline_js() -> FileResponse:
+        return FileResponse(
+            PACKAGE_ROOT / "static" / "local-live-timeline.js",
+            media_type="text/javascript",
+        )
+
+    @application.get("/local-live-timeline.css")
+    def local_live_timeline_css() -> FileResponse:
+        return FileResponse(
+            PACKAGE_ROOT / "static" / "local-live-timeline.css",
+            media_type="text/css",
+        )
+
     @application.get("/")
     def root() -> HTMLResponse:
         content = (PROJECT_ROOT / "index.html").read_text(encoding="utf-8")
-        style = '<link rel="stylesheet" href="/local-live.css">'
-        script = '<script src="/local-live.js" defer></script>'
+        styles = (
+            '<link rel="stylesheet" href="/local-live.css">'
+            '<link rel="stylesheet" href="/local-live-timeline.css">'
+        )
+        scripts = (
+            '<script src="/local-live.js" defer></script>'
+            '<script src="/local-live-timeline.js" defer></script>'
+        )
         if "</head>" in content:
-            content = content.replace("</head>", style + "</head>", 1)
+            content = content.replace("</head>", styles + "</head>", 1)
         if "</body>" in content:
-            content = content.replace("</body>", script + "</body>", 1)
+            content = content.replace("</body>", scripts + "</body>", 1)
         else:
-            content += script
+            content += scripts
         return HTMLResponse(content)
 
     return application
