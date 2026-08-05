@@ -32,6 +32,7 @@ STYLE_ASSETS = (
     "local-live-timeline.css",
     "local-live-details.css",
     "local-live-navigation.css",
+    "local-ui-recovery.css",
 )
 SCRIPT_ASSETS = (
     "local-live.js",
@@ -39,11 +40,26 @@ SCRIPT_ASSETS = (
     "local-live-details.js",
     "local-live-changes.js",
     "local-live-navigation.js",
+    "local-ui-recovery.js",
 )
 LOCAL_ASSETS = {
     **{name: "text/css" for name in STYLE_ASSETS},
     **{name: "text/javascript" for name in SCRIPT_ASSETS},
 }
+
+_FORECAST_AUTO_START_BLOCK = """        const period = getPeriod();
+        const cache = await loadMatchingCache(period);
+        if (cache) render(cache, "cache");
+        await refreshData();"""
+_FORECAST_MANUAL_START_BLOCK = """        state.dataMode = "idle";
+        $("dataModeText").textContent =
+          "Zeitraum prüfen und Forecast laden.";"""
+_FORECAST_REQUEST_CONFIG = (
+    "request: Object.freeze({ timeoutMs: 16000, retries: 1, concurrency: 4 }),"
+)
+_LOCAL_FORECAST_REQUEST_CONFIG = (
+    "request: Object.freeze({ timeoutMs: 10000, retries: 0, concurrency: 8 }),"
+)
 
 
 class SessionPatch(BaseModel):
@@ -53,6 +69,33 @@ class SessionPatch(BaseModel):
 
 def utc_now() -> str:
     return datetime.now(UTC).isoformat().replace("+00:00", "Z")
+
+
+def _prepare_local_index(content: str) -> str:
+    """Disable unsolicited forecast traffic and apply bounded local requests."""
+
+    if _FORECAST_AUTO_START_BLOCK not in content:
+        raise RuntimeError("Forecast auto-start block is missing from index.html")
+    if _FORECAST_REQUEST_CONFIG not in content:
+        raise RuntimeError("Forecast request configuration is missing from index.html")
+
+    prepared = content.replace(
+        _FORECAST_AUTO_START_BLOCK,
+        _FORECAST_MANUAL_START_BLOCK,
+        1,
+    )
+    prepared = prepared.replace(
+        _FORECAST_REQUEST_CONFIG,
+        _LOCAL_FORECAST_REQUEST_CONFIG,
+        1,
+    )
+    prepared = prepared.replace("Wetter neu laden", "Forecast laden")
+    prepared = prepared.replace("Wetter wird geladen ...", "Forecast wird geladen …")
+    prepared = prepared.replace(
+        "Bitte „Daten aktualisieren“ wählen.",
+        "Bitte „Forecast laden“ wählen.",
+    )
+    return prepared
 
 
 def _production_runners(config: AppConfig, data_dir: Path) -> tuple[SourceRunner, ...]:
@@ -328,7 +371,9 @@ def create_app(
 
     @application.get("/")
     def root() -> HTMLResponse:
-        content = (PROJECT_ROOT / "index.html").read_text(encoding="utf-8")
+        content = _prepare_local_index(
+            (PROJECT_ROOT / "index.html").read_text(encoding="utf-8")
+        )
         styles = "".join(
             f'<link rel="stylesheet" href="/{asset}">' for asset in STYLE_ASSETS
         )
