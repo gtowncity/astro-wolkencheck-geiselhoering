@@ -18,7 +18,12 @@ ARTIFACTS = ROOT / "test-artifacts"
 def satellite_png() -> bytes:
     image = Image.new("RGB", (1200, 850), (24, 45, 66))
     draw = ImageDraw.Draw(image)
-    draw.ellipse((690, 310, 725, 345), fill=(220, 24, 45), outline="white", width=4)
+    draw.ellipse(
+        (690, 310, 725, 345),
+        fill=(220, 24, 45),
+        outline="white",
+        width=4,
+    )
     draw.text((20, 20), "EUMETSAT MTG-FCI TEST FRAME", fill="white")
     output = io.BytesIO()
     image.save(output, format="PNG")
@@ -28,7 +33,9 @@ def satellite_png() -> bytes:
 def frames() -> list[str]:
     latest = datetime.now(UTC).replace(second=0, microsecond=0)
     return [
-        (latest - timedelta(minutes=20 - index * 10)).isoformat().replace("+00:00", "Z")
+        (latest - timedelta(minutes=20 - index * 10))
+        .isoformat()
+        .replace("+00:00", "Z")
         for index in range(3)
     ]
 
@@ -80,36 +87,105 @@ def html_shell() -> str:
   <meta charset='utf-8'>
   <meta name='viewport' content='width=device-width,initial-scale=1'>
   <style>
-    :root { --awc-bg:#080d13; --awc-surface:#0f1721; --awc-border:#2b3a4b;
-      --awc-text:#edf3f8; --awc-muted:#a7b5c3; --awc-info:#69add9;
-      --awc-green:#55c38a; --awc-yellow:#dfb44f; --awc-red:#e16a76;
-      --awc-radius:10px; --awc-gap:10px; }
+    :root {
+      --awc-bg:#080d13;
+      --awc-surface:#0f1721;
+      --awc-border:#2b3a4b;
+      --awc-text:#edf3f8;
+      --awc-muted:#a7b5c3;
+      --awc-info:#69add9;
+      --awc-green:#55c38a;
+      --awc-yellow:#dfb44f;
+      --awc-red:#e16a76;
+      --awc-radius:10px;
+      --awc-gap:10px;
+    }
     * { box-sizing:border-box; }
-    body { margin:0; background:#080d13; color:#edf3f8; font-family:Arial,sans-serif; }
-    .app { width:min(1480px,calc(100% - 28px)); margin:0 auto; padding:14px 0 40px; }
-    .app-header,.awc-card { border:1px solid #2b3a4b; border-radius:10px; background:#0f1721; }
+    body {
+      margin:0;
+      background:#080d13;
+      color:#edf3f8;
+      font-family:Arial,sans-serif;
+    }
+    .app {
+      width:min(1480px,calc(100% - 28px));
+      margin:0 auto;
+      padding:14px 0 40px;
+    }
+    .app-header,.awc-card {
+      border:1px solid #2b3a4b;
+      border-radius:10px;
+      background:#0f1721;
+    }
     .app-header { padding:14px; }
-    .controls { display:grid; grid-template-columns:1fr 1fr auto; gap:9px; align-items:end; }
+    .controls {
+      display:grid;
+      grid-template-columns:1fr 1fr auto;
+      gap:9px;
+      align-items:end;
+    }
     .field { display:grid; gap:4px; }
-    input,select,button { min-height:38px; border:1px solid #2b3a4b; border-radius:7px;
-      background:#111d2a; color:#edf3f8; padding:7px 9px; }
-    .request-progress { margin-top:8px; padding:8px; border:1px solid #385c73; }
+    input,select,button {
+      min-height:38px;
+      border:1px solid #2b3a4b;
+      border-radius:7px;
+      background:#111d2a;
+      color:#edf3f8;
+      padding:7px 9px;
+    }
+    .request-progress {
+      margin-top:8px;
+      padding:8px;
+      border:1px solid #385c73;
+    }
     .request-progress[hidden] { display:none; }
     #overviewContent { margin-top:10px; }
-    .decision-hero { display:grid; grid-template-columns:1fr 360px; gap:16px; padding:16px;
-      border:1px solid #2b3a4b; border-left:5px solid #69add9; border-radius:10px; }
-    .decision-facts { display:grid; grid-template-columns:repeat(3,1fr); }
-    .decision-facts>div { padding:8px; border-left:1px solid #2b3a4b; }
+    .decision-hero {
+      display:grid;
+      grid-template-columns:1fr 360px;
+      gap:16px;
+      padding:16px;
+      border:1px solid #2b3a4b;
+      border-left:5px solid #69add9;
+      border-radius:10px;
+    }
+    .decision-facts {
+      display:grid;
+      grid-template-columns:repeat(3,1fr);
+    }
+    .decision-facts>div {
+      padding:8px;
+      border-left:1px solid #2b3a4b;
+    }
     .decision-facts span,.decision-facts strong { display:block; }
     #live-dashboard-root { margin-top:10px; }
-    .awc-live-grid { display:grid; grid-template-columns:minmax(0,2fr) minmax(310px,.9fr); gap:10px; }
-    .awc-side-stack,.awc-secondary-grid { display:grid; gap:10px; align-content:start; }
-    .awc-secondary-grid { grid-template-columns:1fr 1fr; margin-top:10px; }
+    .awc-live-grid {
+      display:grid;
+      grid-template-columns:minmax(0,2fr) minmax(310px,.9fr);
+      gap:10px;
+    }
+    .awc-side-stack,.awc-secondary-grid {
+      display:grid;
+      gap:10px;
+      align-content:start;
+    }
+    .awc-secondary-grid {
+      grid-template-columns:1fr 1fr;
+      margin-top:10px;
+    }
     .awc-card { min-width:0; padding:12px; }
-    .awc-radar-summary { display:grid; grid-template-columns:minmax(0,1fr) 1fr; gap:12px; }
+    .awc-radar-summary {
+      display:grid;
+      grid-template-columns:minmax(0,1fr) 1fr;
+      gap:12px;
+    }
     .awc-radar-visual { min-width:0; }
     .awc-hazard-entry { display:flex; gap:8px; }
-    @media(max-width:900px){.awc-live-grid,.awc-secondary-grid,.awc-radar-summary{grid-template-columns:1fr}}
+    @media(max-width:900px) {
+      .awc-live-grid,.awc-secondary-grid,.awc-radar-summary {
+        grid-template-columns:1fr;
+      }
+    }
   </style>
   <link rel='stylesheet' href='/local-ui-recovery.css'>
   <link rel='stylesheet' href='/local-satellite-viewer.css'>
@@ -119,8 +195,14 @@ def html_shell() -> str:
     <header class='app-header awc-unified-header'>
       <h1>Astro-Wolkencheck</h1>
       <div class='controls'>
-        <label class='field'>Beginn<input id='startInput' type='datetime-local' value='2026-08-07T22:00'></label>
-        <label class='field'>Ende<input id='endInput' type='datetime-local' value='2026-08-09T06:00'></label>
+        <label class='field'>
+          Beginn
+          <input id='startInput' type='datetime-local' value='2026-08-07T22:00'>
+        </label>
+        <label class='field'>
+          Ende
+          <input id='endInput' type='datetime-local' value='2026-08-09T06:00'>
+        </label>
         <button id='refreshBtn' type='button'>Wetter neu laden</button>
       </div>
       <div id='requestProgress' class='request-progress' hidden>
@@ -142,7 +224,10 @@ def html_shell() -> str:
           <article class='awc-card awc-warnings-card'>Warnungen</article>
           <article class='awc-card awc-sources-card'>Quellen</article>
           <article class='awc-card awc-hazard-card'>
-            <div class='awc-hazard-entry'><strong>Gespeicherte Gefahr</strong><span>Text</span></div>
+            <div class='awc-hazard-entry'>
+              <strong>Gespeicherte Gefahr</strong>
+              <span>Text</span>
+            </div>
           </article>
         </div>
       </div>
@@ -158,9 +243,12 @@ def html_shell() -> str:
       const progress = document.getElementById('requestProgress');
       button.disabled = true;
       progress.hidden = false;
-      document.getElementById('progressMetric').textContent = '4 von 16 Quellen verarbeitet';
+      document.getElementById('progressMetric').textContent =
+        '4 von 16 Quellen verarbeitet';
       try {
-        await fetch('https://api.open-meteo.com/v1/forecast?latitude=0&longitude=0');
+        await fetch(
+          'https://api.open-meteo.com/v1/forecast?latitude=0&longitude=0'
+        );
       } finally {
         progress.hidden = true;
         button.disabled = false;
@@ -231,7 +319,11 @@ def test_deferred_forecast_compact_layout_and_satellite_controls() -> None:
             )
         elif path == "/api/v1/satellite/image":
             requests.append(url)
-            route.fulfill(status=200, content_type="image/png", body=satellite_png())
+            route.fulfill(
+                status=200,
+                content_type="image/png",
+                body=satellite_png(),
+            )
         elif parsed.netloc == "geocoding-api.open-meteo.com":
             route.fulfill(
                 status=200,
@@ -255,7 +347,11 @@ def test_deferred_forecast_compact_layout_and_satellite_controls() -> None:
             "ensemble-api.open-meteo.com",
         }:
             requests.append(url)
-            route.fulfill(status=200, content_type="application/json", body="{}")
+            route.fulfill(
+                status=200,
+                content_type="application/json",
+                body="{}",
+            )
         else:
             route.fulfill(status=404, body="not found")
 
@@ -284,7 +380,9 @@ def test_deferred_forecast_compact_layout_and_satellite_controls() -> None:
         )
         assert hazard_display == "block"
 
-        with page.expect_request(lambda request: "api.open-meteo.com" in request.url):
+        with page.expect_request(
+            lambda request: "api.open-meteo.com" in request.url
+        ):
             page.locator("#refreshBtn").click()
         rewritten = next(url for url in requests if "api.open-meteo.com" in url)
         query = parse_qs(urlparse(rewritten).query)
@@ -300,7 +398,9 @@ def test_deferred_forecast_compact_layout_and_satellite_controls() -> None:
         ).inner_text()
 
         requests.clear()
-        with page.expect_request(lambda request: "api.open-meteo.com" in request.url):
+        with page.expect_request(
+            lambda request: "api.open-meteo.com" in request.url
+        ):
             page.locator("#refreshBtn").click()
         rewritten = next(url for url in requests if "api.open-meteo.com" in url)
         query = parse_qs(urlparse(rewritten).query)
@@ -314,17 +414,30 @@ def test_deferred_forecast_compact_layout_and_satellite_controls() -> None:
         assert page.locator("#awc-satellite-range").get_attribute("max") == "2"
 
         page.locator("#awc-satellite-zoom-in").click()
-        transform = page.locator("#awc-satellite-image").evaluate("node => node.style.transform")
+        transform = page.locator("#awc-satellite-image").evaluate(
+            "node => node.style.transform"
+        )
         assert "scale(1.35)" in transform
 
         page.locator("#awc-satellite-fullscreen").click()
         page.wait_for_function("window.__fullscreenCalls === 1")
-        assert page.locator("#awc-satellite-fullscreen").inner_text() == "Vollbild schließen"
+        assert page.locator("#awc-satellite-fullscreen").inner_text() == (
+            "Vollbild schließen"
+        )
         page.locator("#awc-satellite-fullscreen").click()
 
-        page.locator("#awc-satellite-range").fill("0")
+        page.locator("#awc-satellite-range").evaluate(
+            """
+            node => {
+              node.value = '0';
+              node.dispatchEvent(new Event('input', {bubbles: true}));
+            }
+            """
+        )
         page.locator("#awc-satellite-play").click()
-        page.wait_for_function("Number(document.getElementById('awc-satellite-range').value) > 0")
+        page.wait_for_function(
+            "Number(document.getElementById('awc-satellite-range').value) > 0"
+        )
         page.locator("#awc-satellite-play").click()
 
         ARTIFACTS.mkdir(exist_ok=True)
@@ -332,14 +445,14 @@ def test_deferred_forecast_compact_layout_and_satellite_controls() -> None:
             path=str(ARTIFACTS / "forecast-satellite-desktop.png"),
             full_page=True,
         )
-        assert page.evaluate(
-            "document.documentElement.scrollWidth <= document.documentElement.clientWidth"
+        no_overflow = (
+            "document.documentElement.scrollWidth <= "
+            "document.documentElement.clientWidth"
         )
+        assert page.evaluate(no_overflow)
 
         page.set_viewport_size({"width": 390, "height": 844})
-        assert page.evaluate(
-            "document.documentElement.scrollWidth <= document.documentElement.clientWidth"
-        )
+        assert page.evaluate(no_overflow)
         page.screenshot(
             path=str(ARTIFACTS / "forecast-satellite-mobile.png"),
             full_page=True,
