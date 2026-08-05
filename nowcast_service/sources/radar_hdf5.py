@@ -74,8 +74,7 @@ class RadarFrameMetadata:
         if not (math.isfinite(x) and math.isfinite(y)):
             raise RadarHdf5Error("Coordinate transformation returned a non-finite value")
         if not (
-            self.left_edge_m <= x < self.right_edge_m
-            and self.bottom_edge_m < y <= self.top_edge_m
+            self.left_edge_m <= x < self.right_edge_m and self.bottom_edge_m < y <= self.top_edge_m
         ):
             raise RadarHdf5Error("Location is outside the radar raster")
         column = math.floor((x - self.left_edge_m) / self.xscale_m)
@@ -188,9 +187,7 @@ def _parse_member_name(name: str) -> tuple[str, datetime, int]:
 
 
 def _projected_edges(where: h5py.Group, projection: str) -> tuple[float, float, float, float]:
-    transformer = Transformer.from_crs(
-        "EPSG:4326", CRS.from_user_input(projection), always_xy=True
-    )
+    transformer = Transformer.from_crs("EPSG:4326", CRS.from_user_input(projection), always_xy=True)
     left, top = transformer.transform(
         _finite_number(where.attrs.get("UL_lon"), "UL_lon"),
         _finite_number(where.attrs.get("UL_lat"), "UL_lat"),
@@ -210,9 +207,7 @@ def load_radar_frame(path: Path, *, expected_product: str | None = None) -> Rada
     member_name = path.name
     product, filename_reference, lead_minutes = _parse_member_name(member_name)
     if expected_product is not None and product != expected_product:
-        raise RadarHdf5Error(
-            f"Expected {expected_product}, but member name identifies {product}"
-        )
+        raise RadarHdf5Error(f"Expected {expected_product}, but member name identifies {product}")
 
     try:
         with h5py.File(path, "r") as handle:
@@ -252,9 +247,7 @@ def load_radar_frame(path: Path, *, expected_product: str | None = None) -> Rada
             data_what = _required_group(handle, "/dataset1/data1/what")
             quantity = _text(data_what.attrs.get("quantity"), "quantity")
             if quantity != _EXPECTED_QUANTITY[product]:
-                raise RadarHdf5Error(
-                    f"Unexpected quantity {quantity!r} for product {product}"
-                )
+                raise RadarHdf5Error(f"Unexpected quantity {quantity!r} for product {product}")
             gain = _finite_number(data_what.attrs.get("gain"), "gain")
             offset = _finite_number(data_what.attrs.get("offset"), "offset")
             nodata = _integer(data_what.attrs.get("nodata"), "nodata")

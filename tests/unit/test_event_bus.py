@@ -1,5 +1,7 @@
 import json
+
 import pytest
+
 from nowcast_service.runtime.event_bus import EventBus
 
 

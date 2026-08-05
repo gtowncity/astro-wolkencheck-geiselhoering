@@ -134,9 +134,7 @@ class RuntimeDatabase:
                     rows = connection.execute(
                         "SELECT payload_json FROM hazard_latches ORDER BY hazard_key"
                     ).fetchall()
-                hazards = tuple(
-                    LatchedHazard.from_dict(json.loads(str(row[0]))) for row in rows
-                )
+                hazards = tuple(LatchedHazard.from_dict(json.loads(str(row[0]))) for row in rows)
                 self._last_error = None
                 return hazards
             except (sqlite3.Error, ValueError, KeyError, TypeError, json.JSONDecodeError) as exc:

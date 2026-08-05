@@ -5,10 +5,17 @@ from nowcast_service.hazard_latch import HazardLatchRegistry, HazardSignal, Latc
 
 
 def signal(now: datetime, *, state: RiskState = RiskState.RED) -> HazardSignal:
-    return HazardSignal(key="cap:storm", source="DWD_CAP", state=state,
-        reason_code="CAP_STORM", reason="Storm", observed_at=now,
-        hold_until=now + timedelta(minutes=10), source_input_id="cap:1",
-        clear_condition="fresh CAP cancellation or expiry")
+    return HazardSignal(
+        key="cap:storm",
+        source="DWD_CAP",
+        state=state,
+        reason_code="CAP_STORM",
+        reason="Storm",
+        observed_at=now,
+        hold_until=now + timedelta(minutes=10),
+        source_input_id="cap:1",
+        clear_condition="fresh CAP cancellation or expiry",
+    )
 
 
 def test_hazard_serialization_and_acknowledgement() -> None:

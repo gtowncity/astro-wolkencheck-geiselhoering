@@ -25,20 +25,11 @@ def alert_xml(
     expires: str = "2026-08-05T12:00:00Z",
 ) -> bytes:
     if geometry == "polygon":
-        area = (
-            "<polygon>48.70,12.20 48.70,12.60 49.00,12.60 "
-            "49.00,12.20 48.70,12.20</polygon>"
-        )
+        area = "<polygon>48.70,12.20 48.70,12.60 49.00,12.60 49.00,12.20 48.70,12.20</polygon>"
     elif geometry == "away":
-        area = (
-            "<polygon>47.00,10.00 47.00,10.20 47.20,10.20 "
-            "47.20,10.00 47.00,10.00</polygon>"
-        )
+        area = "<polygon>47.00,10.00 47.00,10.20 47.20,10.20 47.20,10.00 47.00,10.00</polygon>"
     elif geometry == "geocode":
-        area = (
-            "<geocode><valueName>WARNCELLID</valueName>"
-            "<value>109278000</value></geocode>"
-        )
+        area = "<geocode><valueName>WARNCELLID</valueName><value>109278000</value></geocode>"
     else:
         raise AssertionError(geometry)
     return f"""<alert xmlns="{CAP_NS}">

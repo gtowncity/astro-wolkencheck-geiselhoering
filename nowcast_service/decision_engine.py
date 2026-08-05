@@ -114,9 +114,7 @@ def _data_quality(source_health: tuple[SourceHealth, ...]) -> DataQuality:
         return DataQuality.INSUFFICIENT
 
     degraded_supporting = any(
-        source.supporting
-        and not source.healthy_for_green
-        and not source.optional_and_inactive
+        source.supporting and not source.healthy_for_green and not source.optional_and_inactive
         for source in source_health
     )
     if degraded_supporting:

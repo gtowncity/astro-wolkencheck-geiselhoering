@@ -95,24 +95,33 @@ def test_cap_geocode_resolves_match_nonmatch_and_unknown() -> None:
     unknown_info = unknown.german_info()
 
     assert info is not None and unknown_info is not None
-    assert index.match(
-        alert=matching,
-        info=info,
-        longitude=12.40,
-        latitude=48.84,
-    ) is LocationMatch.MATCH
-    assert index.match(
-        alert=matching,
-        info=info,
-        longitude=10.0,
-        latitude=48.0,
-    ) is LocationMatch.NO_MATCH
-    assert index.match(
-        alert=unknown,
-        info=unknown_info,
-        longitude=12.40,
-        latitude=48.84,
-    ) is LocationMatch.UNKNOWN
+    assert (
+        index.match(
+            alert=matching,
+            info=info,
+            longitude=12.40,
+            latitude=48.84,
+        )
+        is LocationMatch.MATCH
+    )
+    assert (
+        index.match(
+            alert=matching,
+            info=info,
+            longitude=10.0,
+            latitude=48.0,
+        )
+        is LocationMatch.NO_MATCH
+    )
+    assert (
+        index.match(
+            alert=unknown,
+            info=unknown_info,
+            longitude=12.40,
+            latitude=48.84,
+        )
+        is LocationMatch.UNKNOWN
+    )
 
 
 def test_empty_geocode_set_is_unknown() -> None:
@@ -132,9 +141,7 @@ def test_invalid_schema_crs_geometry_and_duplicates_are_rejected() -> None:
         )
     with pytest.raises(WarningAreaError, match="Unsupported warning-area geometry"):
         parse_warning_area_geojson(
-            feature_collection(
-                geometry={"type": "Point", "coordinates": [12.4, 48.84]}
-            ),
+            feature_collection(geometry={"type": "Point", "coordinates": [12.4, 48.84]}),
             retrieved_at=RETRIEVED_AT,
         )
     duplicate = json.loads(feature_collection())

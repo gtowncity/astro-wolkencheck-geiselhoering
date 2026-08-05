@@ -1,16 +1,32 @@
 from datetime import UTC, datetime, timedelta
 
 from nowcast_service.alerts.engine import AlertEngine, AlertEventType
-from nowcast_service.decision_engine import Action, DataQuality, EquipmentState, RiskState, SafetyDecision
+from nowcast_service.decision_engine import (
+    Action,
+    DataQuality,
+    EquipmentState,
+    RiskState,
+    SafetyDecision,
+)
 from nowcast_service.runtime.models import DecisionSnapshot
 
 
 def snapshot(state: RiskState, reasons: tuple[str, ...]) -> DecisionSnapshot:
-    return DecisionSnapshot.create(evaluation_at=datetime.now(UTC), algorithm_version="test",
-        configuration_version="1", equipment_state=EquipmentState.NOT_DEPLOYED,
-        decision=SafetyDecision(state=state, data_quality=DataQuality.COMPLETE,
+    return DecisionSnapshot.create(
+        evaluation_at=datetime.now(UTC),
+        algorithm_version="test",
+        configuration_version="1",
+        equipment_state=EquipmentState.NOT_DEPLOYED,
+        decision=SafetyDecision(
+            state=state,
+            data_quality=DataQuality.COMPLETE,
             action=Action.DO_NOT_SETUP if state is RiskState.RED else Action.WAIT_AND_RECHECK,
-            reason_codes=reasons, reasons=reasons), active_hazards=(), source_snapshots=())
+            reason_codes=reasons,
+            reasons=reasons,
+        ),
+        active_hazards=(),
+        source_snapshots=(),
+    )
 
 
 def test_alarm_transitions_ack_and_repeat() -> None:

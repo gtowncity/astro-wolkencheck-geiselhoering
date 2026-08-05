@@ -90,9 +90,7 @@ async def download_atomic(
     digest = hashlib.sha256()
     written = 0
     try:
-        async with client.stream(
-            "GET", url, headers=headers, follow_redirects=False
-        ) as response:
+        async with client.stream("GET", url, headers=headers, follow_redirects=False) as response:
             if response.status_code == 304:
                 return None
             if response.status_code != 200:

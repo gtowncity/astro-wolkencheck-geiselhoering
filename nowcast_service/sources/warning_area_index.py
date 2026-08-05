@@ -64,9 +64,7 @@ class WarningAreaIndex:
     def ids_covering(self, longitude: float, latitude: float) -> tuple[str, ...]:
         _validate_lonlat(longitude, latitude)
         point = Point(longitude, latitude)
-        return tuple(
-            sorted(area.warncell_id for area in self.areas if area.geometry.covers(point))
-        )
+        return tuple(sorted(area.warncell_id for area in self.areas if area.geometry.covers(point)))
 
     def match_ids(
         self,
@@ -171,10 +169,7 @@ def _geometry(feature: dict[str, Any]) -> BaseGeometry:
     if geometry.is_empty or not geometry.is_valid:
         raise WarningAreaError("Warning-area geometry is empty or invalid")
     minimum_x, minimum_y, maximum_x, maximum_y = geometry.bounds
-    if not (
-        -180 <= minimum_x <= maximum_x <= 180
-        and -90 <= minimum_y <= maximum_y <= 90
-    ):
+    if not (-180 <= minimum_x <= maximum_x <= 180 and -90 <= minimum_y <= maximum_y <= 90):
         raise WarningAreaError("Warning-area geometry is outside longitude/latitude bounds")
     return geometry
 
@@ -275,9 +270,7 @@ class DwdWarningAreaClient:
             follow_redirects=False,
         )
         if response.status_code != 200:
-            raise WarningAreaError(
-                f"DWD warning-area WFS returned HTTP {response.status_code}"
-            )
+            raise WarningAreaError(f"DWD warning-area WFS returned HTTP {response.status_code}")
         if "json" not in response.headers.get("content-type", "").casefold():
             raise WarningAreaError("DWD warning-area WFS did not return JSON")
         index = parse_warning_area_geojson(

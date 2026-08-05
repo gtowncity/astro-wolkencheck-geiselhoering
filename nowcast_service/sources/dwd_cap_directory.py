@@ -36,37 +36,27 @@ class CapProductSpec:
         match = self.canonical_pattern.fullmatch(name)
         if match is None:
             return None
-        return datetime.strptime(match.group("timestamp"), "%Y%m%d%H%M%S").replace(
-            tzinfo=UTC
-        )
+        return datetime.strptime(match.group("timestamp"), "%Y%m%d%H%M%S").replace(tzinfo=UTC)
 
 
 CAP_COMMUNE_SPEC = CapProductSpec(
     product="DWD_CAP_COMMUNE",
-    directory_url=(
-        "https://opendata.dwd.de/weather/alerts/cap/COMMUNEUNION_DWD_STAT/"
-    ),
+    directory_url=("https://opendata.dwd.de/weather/alerts/cap/COMMUNEUNION_DWD_STAT/"),
     canonical_pattern=re.compile(
         r"Z_CAP_C_EDZW_(?P<timestamp>\d{14})_PVW_STATUS_"
         r"PREMIUMDWD_COMMUNEUNION_DE\.zip"
     ),
-    alias=(
-        "Z_CAP_C_EDZW_LATEST_PVW_STATUS_PREMIUMDWD_COMMUNEUNION_DE.zip"
-    ),
+    alias=("Z_CAP_C_EDZW_LATEST_PVW_STATUS_PREMIUMDWD_COMMUNEUNION_DE.zip"),
 )
 
 CAP_CELLS_SPEC = CapProductSpec(
     product="DWD_CAP_CELLS",
-    directory_url=(
-        "https://opendata.dwd.de/weather/alerts/cap/COMMUNEUNION_CELLS_STAT/"
-    ),
+    directory_url=("https://opendata.dwd.de/weather/alerts/cap/COMMUNEUNION_CELLS_STAT/"),
     canonical_pattern=re.compile(
         r"Z_CAP_C_EDZW_(?P<timestamp>\d{14})_PVW_STATUS_"
         r"PREMIUMCELLS_COMMUNEUNION_DE\.zip"
     ),
-    alias=(
-        "Z_CAP_C_EDZW_LATEST_PVW_STATUS_PREMIUMCELLS_COMMUNEUNION_DE.zip"
-    ),
+    alias=("Z_CAP_C_EDZW_LATEST_PVW_STATUS_PREMIUMCELLS_COMMUNEUNION_DE.zip"),
 )
 
 
@@ -75,11 +65,7 @@ def ranked_cap_candidates(
 ) -> tuple[CapProductFile, ...]:
     by_name = {entry.name: entry for entry in entries}
     alias_entry = by_name.get(spec.alias)
-    alias_url = (
-        alias_entry.url
-        if alias_entry is not None
-        else spec.directory_url + spec.alias
-    )
+    alias_url = alias_entry.url if alias_entry is not None else spec.directory_url + spec.alias
     candidates = [
         CapProductFile(
             product=spec.product,
@@ -122,9 +108,7 @@ class DwdCapDirectoryClient:
             follow_redirects=False,
         )
         if response.status_code != 200:
-            raise DwdDirectoryError(
-                f"DWD CAP directory returned HTTP {response.status_code}"
-            )
+            raise DwdDirectoryError(f"DWD CAP directory returned HTTP {response.status_code}")
         if "html" not in response.headers.get("content-type", "").casefold():
             raise DwdDirectoryError("DWD CAP directory did not return HTML")
         if len(response.content) > 16 * 1024 * 1024:

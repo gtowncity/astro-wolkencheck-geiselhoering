@@ -35,9 +35,7 @@ def test_runtime_state_exposes_latched_hazard_after_source_failure() -> None:
         )
     )
 
-    runtime.set_source_state(
-        "DWD_RV", SourceState.FAILED, detail="Radarquelle ausgefallen."
-    )
+    runtime.set_source_state("DWD_RV", SourceState.FAILED, detail="Radarquelle ausgefallen.")
 
     decision = runtime.decision()
     assert decision.state is RiskState.RED

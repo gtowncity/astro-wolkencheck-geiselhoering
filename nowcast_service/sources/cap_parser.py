@@ -334,9 +334,7 @@ def _references(value: str | None) -> tuple[CapReference, ...]:
             datetime,
             _timestamp(parts[2], "reference sent", required=True),
         )
-        references.append(
-            CapReference(sender=parts[0], identifier=parts[1], sent=sent)
-        )
+        references.append(CapReference(sender=parts[0], identifier=parts[1], sent=sent))
     return tuple(references)
 
 

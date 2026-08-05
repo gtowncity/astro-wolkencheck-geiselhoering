@@ -107,9 +107,7 @@ def test_reads_actual_odim_metadata_and_locates_geiselhoering(tmp_path: Path) ->
 
 
 def test_forecast_frame_uses_filename_lead_and_simulation_flag(tmp_path: Path) -> None:
-    path = make_frame(
-        tmp_path / "composite_wn_20260805_0625_120-hd5", product="wn", lead=120
-    )
+    path = make_frame(tmp_path / "composite_wn_20260805_0625_120-hd5", product="wn", lead=120)
 
     frame = load_radar_frame(path, expected_product="DWD_WN")
 

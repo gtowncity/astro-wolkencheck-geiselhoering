@@ -310,9 +310,7 @@ def analyze_radar_frame(
     valid_fraction = site_valid_count / site_total if site_total else 0.0
     site_values = values[site_valid]
     site_maximum = float(np.max(site_values)) if site_values.size else None
-    weak_pixels = int(
-        np.count_nonzero(site_valid & (values >= config.weak_threshold_mm_5min))
-    )
+    weak_pixels = int(np.count_nonzero(site_valid & (values >= config.weak_threshold_mm_5min)))
     rain_at_site = bool(
         site_maximum is not None
         and (
@@ -385,10 +383,7 @@ def _coverage_complete(
     maximum_lead: int,
 ) -> bool:
     required = range(0, maximum_lead + 1, 5)
-    return all(
-        lead in analyses and analyses[lead].coverage_sufficient
-        for lead in required
-    )
+    return all(lead in analyses and analyses[lead].coverage_sufficient for lead in required)
 
 
 def _arrival(frames: tuple[RadarFrameAnalysis, ...]) -> ArrivalWindow | None:
@@ -426,8 +421,7 @@ def _moving_toward(
 ) -> bool:
     if arrival is not None and arrival.estimate_minutes > 0:
         prior_component = any(
-            frame.lead_minutes < arrival.estimate_minutes
-            and frame.nearest_component is not None
+            frame.lead_minutes < arrival.estimate_minutes and frame.nearest_component is not None
             for frame in frames
         )
         if prior_component:

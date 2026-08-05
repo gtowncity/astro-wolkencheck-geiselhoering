@@ -82,9 +82,7 @@ class LatchedHazard:
             "holdUntil": self.signal.hold_until.isoformat(),
             "clearStreak": self.clear_streak,
             "clearCyclesRequired": self.signal.clear_cycles_required,
-            "acknowledgedAt": (
-                self.acknowledged_at.isoformat() if self.acknowledged_at else None
-            ),
+            "acknowledgedAt": (self.acknowledged_at.isoformat() if self.acknowledged_at else None),
             "sourceInputId": self.signal.source_input_id,
             "clearCondition": self.signal.clear_condition,
         }
@@ -102,18 +100,14 @@ class LatchedHazard:
             hold_until=_parse_utc(str(payload["holdUntil"]), "holdUntil"),
             clear_cycles_required=int(payload["clearCyclesRequired"]),
             source_input_id=(
-                str(payload["sourceInputId"])
-                if payload.get("sourceInputId") is not None
-                else None
+                str(payload["sourceInputId"]) if payload.get("sourceInputId") is not None else None
             ),
             clear_condition=str(payload.get("clearCondition") or "fresh clear evidence"),
         )
         return cls(
             signal=signal,
             latched_at=_parse_utc(str(payload["latchedAt"]), "latchedAt"),
-            last_confirmed_at=_parse_utc(
-                str(payload["lastConfirmedAt"]), "lastConfirmedAt"
-            ),
+            last_confirmed_at=_parse_utc(str(payload["lastConfirmedAt"]), "lastConfirmedAt"),
             clear_streak=int(payload.get("clearStreak", 0)),
             acknowledged_at=(
                 _parse_utc(str(acknowledged), "acknowledgedAt")
@@ -130,22 +124,17 @@ class HazardLatchRegistry:
     def observe(self, signal: HazardSignal) -> LatchedHazard:
         existing = self._hazards.get(signal.key)
         latched_at = existing.latched_at if existing is not None else signal.observed_at
-        reset_ack = (
-            existing is not None
-            and (
-                existing.signal.state != signal.state
-                or existing.signal.reason_code != signal.reason_code
-                or existing.signal.reason != signal.reason
-            )
+        reset_ack = existing is not None and (
+            existing.signal.state != signal.state
+            or existing.signal.reason_code != signal.reason_code
+            or existing.signal.reason != signal.reason
         )
         hazard = LatchedHazard(
             signal=signal,
             latched_at=latched_at,
             last_confirmed_at=signal.observed_at,
             clear_streak=0,
-            acknowledged_at=(
-                None if reset_ack or existing is None else existing.acknowledged_at
-            ),
+            acknowledged_at=(None if reset_ack or existing is None else existing.acknowledged_at),
         )
         self._hazards[signal.key] = hazard
         return hazard

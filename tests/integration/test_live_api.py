@@ -1,5 +1,7 @@
 from pathlib import Path
+
 from fastapi.testclient import TestClient
+
 from nowcast_service.app import create_app
 
 
@@ -22,9 +24,11 @@ def test_writes_require_csrf_and_ack_does_not_change_risk(tmp_path: Path) -> Non
     response = client.post("/api/v1/alerts/acknowledge", headers={"X-CSRF-Token": token})
     assert response.status_code == 200
     assert client.get("/api/v1/safety").json()["hardwareRisk"]["state"] == before
-    denied = client.patch("/api/v1/session",
+    denied = client.patch(
+        "/api/v1/session",
         headers={"X-CSRF-Token": token, "Origin": "https://evil.example"},
-        json={"equipment_state": "NOT_DEPLOYED"})
+        json={"equipment_state": "NOT_DEPLOYED"},
+    )
     assert denied.status_code == 403
 
 

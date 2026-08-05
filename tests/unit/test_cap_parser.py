@@ -26,8 +26,7 @@ def cap_xml(
     reference_xml = f"<references>{references}</references>" if references else ""
     if geometry == "polygon":
         area_geometry = (
-            "<polygon>48.70,12.20 48.70,12.60 49.00,12.60 "
-            "49.00,12.20 48.70,12.20</polygon>"
+            "<polygon>48.70,12.20 48.70,12.60 49.00,12.60 49.00,12.20 48.70,12.20</polygon>"
         )
     elif geometry == "circle":
         area_geometry = "<circle>48.84,12.40 5</circle>"
@@ -121,9 +120,7 @@ def test_expired_test_and_private_messages_are_not_displayable() -> None:
 
 
 def test_update_supersedes_reference_and_cancel_removes_reference() -> None:
-    old = parse_cap_xml(
-        cap_xml(identifier="old", sent="2026-08-05T06:00:00Z")
-    )
+    old = parse_cap_xml(cap_xml(identifier="old", sent="2026-08-05T06:00:00Z"))
     update = parse_cap_xml(
         cap_xml(
             identifier="update",
@@ -153,12 +150,8 @@ def test_update_supersedes_reference_and_cancel_removes_reference() -> None:
 
 
 def test_latest_duplicate_identifier_wins() -> None:
-    older = parse_cap_xml(
-        cap_xml(identifier="same", sent="2026-08-05T06:00:00Z")
-    )
-    newer = parse_cap_xml(
-        cap_xml(identifier="same", sent="2026-08-05T06:30:00Z")
-    )
+    older = parse_cap_xml(cap_xml(identifier="same", sent="2026-08-05T06:00:00Z"))
+    newer = parse_cap_xml(cap_xml(identifier="same", sent="2026-08-05T06:30:00Z"))
 
     snapshot = resolve_cap_snapshot((newer, older), now=now())
 
@@ -167,10 +160,7 @@ def test_latest_duplicate_identifier_wins() -> None:
 
 
 def test_malformed_unsafe_namespace_and_time_are_rejected() -> None:
-    malicious = (
-        b'<!DOCTYPE a [<!ENTITY x SYSTEM "file:///etc/passwd">]>'
-        b"<a>&x;</a>"
-    )
+    malicious = b'<!DOCTYPE a [<!ENTITY x SYSTEM "file:///etc/passwd">]><a>&x;</a>'
     with pytest.raises(CapParseError, match="malformed or unsafe"):
         parse_cap_xml(malicious)
     with pytest.raises(CapParseError, match="root element"):

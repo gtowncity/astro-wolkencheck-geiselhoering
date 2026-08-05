@@ -78,9 +78,11 @@ class AlertEngine:
         elif new_state is RiskState.YELLOW:
             if old_state not in {RiskState.RED, RiskState.YELLOW}:
                 event_type = AlertEventType.YELLOW
-            elif old_state is RiskState.YELLOW and previous is not None and set(
-                previous.decision.reason_codes
-            ) != set(current.decision.reason_codes):
+            elif (
+                old_state is RiskState.YELLOW
+                and previous is not None
+                and set(previous.decision.reason_codes) != set(current.decision.reason_codes)
+            ):
                 event_type = AlertEventType.REASON_CHANGED
         elif old_state in {RiskState.RED, RiskState.YELLOW}:
             event_type = AlertEventType.CLEARED

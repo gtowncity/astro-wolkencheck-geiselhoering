@@ -236,10 +236,7 @@ def test_approaching_components_without_site_arrival_are_yellow() -> None:
 def test_missing_frame_and_site_nodata_prevent_complete_coverage() -> None:
     missing = tuple(frame(lead) for lead in range(0, 121, 5) if lead != 60)
     missing_result = analyze_radar_cycle(missing, longitude=0, latitude=0)
-    nodata_cycle = tuple(
-        frame(lead, nodata_site=lead == 30)
-        for lead in range(0, 121, 5)
-    )
+    nodata_cycle = tuple(frame(lead, nodata_site=lead == 30) for lead in range(0, 121, 5))
     nodata_result = analyze_radar_cycle(nodata_cycle, longitude=0, latitude=0)
 
     assert missing_result.missing_leads == (60,)
