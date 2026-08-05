@@ -73,21 +73,25 @@ class WarningAreaIndex:
         longitude: float,
         latitude: float,
     ) -> LocationMatch:
+        """Resolve CAP IDs against the official site-scoped WFS response.
+
+        The runtime WFS query intentionally loads only a small bounding box around the
+        configured site and then verifies that at least one returned municipality covers
+        that point. Therefore a non-empty CAP ID set is a match only when it contains one
+        of those site-covering IDs. Other IDs are valid warnings for other places and are
+        a definite non-match, even when their geometry is outside the local WFS subset.
+        """
+
         _validate_lonlat(longitude, latitude)
         normalized = tuple(dict.fromkeys(item.strip() for item in warncell_ids if item.strip()))
         if not normalized:
             return LocationMatch.UNKNOWN
-        by_id = self.by_warncell_id
-        point = Point(longitude, latitude)
-        unresolved = False
-        for warncell_id in normalized:
-            area = by_id.get(warncell_id)
-            if area is None:
-                unresolved = True
-                continue
-            if area.geometry.covers(point):
-                return LocationMatch.MATCH
-        return LocationMatch.UNKNOWN if unresolved else LocationMatch.NO_MATCH
+        site_ids = frozenset(self.ids_covering(longitude, latitude))
+        if not site_ids:
+            return LocationMatch.UNKNOWN
+        if any(warncell_id in site_ids for warncell_id in normalized):
+            return LocationMatch.MATCH
+        return LocationMatch.NO_MATCH
 
     def match(
         self,
