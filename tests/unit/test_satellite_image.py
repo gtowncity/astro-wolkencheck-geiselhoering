@@ -100,7 +100,7 @@ def test_location_projection_and_wms_axis_order() -> None:
 
 
 def test_image_validation_and_pin_rendering() -> None:
-    image = _validated_image(png_bytes())
+    image = _validated_image(png_bytes((1200, 850)))
     product = PRODUCTS_BY_KEY["geocolour"]
     rendered = _draw_location_pin(
         image,
