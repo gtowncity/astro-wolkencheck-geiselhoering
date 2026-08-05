@@ -19,11 +19,12 @@ def cap_xml(
     message_type: str = "Alert",
     status: str = "Actual",
     scope: str = "Public",
-    expires: str = "2026-08-05T12:00:00Z",
+    expires: str | None = "2026-08-05T12:00:00Z",
     references: str | None = None,
     geometry: str = "polygon",
 ) -> bytes:
     reference_xml = f"<references>{references}</references>" if references else ""
+    expires_xml = f"<expires>{expires}</expires>" if expires is not None else ""
     if geometry == "polygon":
         area_geometry = (
             "<polygon>48.70,12.20 48.70,12.60 49.00,12.60 49.00,12.20 48.70,12.20</polygon>"
@@ -55,7 +56,7 @@ def cap_xml(
     <certainty>Likely</certainty>
     <effective>2026-08-05T06:00:00Z</effective>
     <onset>2026-08-05T06:15:00Z</onset>
-    <expires>{expires}</expires>
+    {expires_xml}
     <senderName>Deutscher Wetterdienst</senderName>
     <headline>Amtliche Warnung vor starkem Gewitter</headline>
     <description>Amtlicher Beschreibungstext.</description>
@@ -117,6 +118,22 @@ def test_expired_test_and_private_messages_are_not_displayable() -> None:
     assert expired.is_displayable(now()) is False
     assert test_message.is_displayable(now()) is False
     assert private.is_displayable(now()) is False
+
+
+def test_missing_expires_uses_fresh_complete_archive_presence_policy() -> None:
+    alert = parse_cap_xml(cap_xml(expires=None))
+    info = alert.german_info()
+
+    assert info is not None
+    assert info.expires is None
+    assert info.is_in_force(now()) is True
+    assert alert.is_displayable(now()) is True
+
+
+def test_non_alert_message_types_never_become_displayable() -> None:
+    for message_type in ("Cancel", "Ack", "Error"):
+        alert = parse_cap_xml(cap_xml(message_type=message_type, expires=None))
+        assert alert.is_displayable(now()) is False
 
 
 def test_update_supersedes_reference_and_cancel_removes_reference() -> None:
