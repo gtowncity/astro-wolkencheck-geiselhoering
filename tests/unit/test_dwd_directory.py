@@ -4,14 +4,13 @@ import httpx
 import pytest
 
 from nowcast_service.sources.dwd_directory import (
-    DwdDirectoryClient,
-    DwdDirectoryError,
     RV_SPEC,
     WN_SPEC,
+    DwdDirectoryClient,
+    DwdDirectoryError,
     parse_directory_entries,
     ranked_candidates,
 )
-
 
 RV_HTML = """
 <html><body>

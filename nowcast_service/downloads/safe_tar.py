@@ -20,6 +20,9 @@ class TarLimits:
     allowed_suffixes: tuple[str, ...] = ("-hd5", ".h5", ".hdf5")
 
 
+DEFAULT_TAR_LIMITS = TarLimits()
+
+
 def _safe_member_name(name: str) -> str:
     path = PurePosixPath(name.replace("\\", "/"))
     if path.is_absolute() or any(part in {"", ".", ".."} for part in path.parts):
@@ -29,7 +32,9 @@ def _safe_member_name(name: str) -> str:
     return path.name
 
 
-def validate_tar(archive: Path, limits: TarLimits = TarLimits()) -> tuple[tarfile.TarInfo, ...]:
+def validate_tar(
+    archive: Path, limits: TarLimits = DEFAULT_TAR_LIMITS
+) -> tuple[tarfile.TarInfo, ...]:
     with tarfile.open(archive, mode="r:*") as bundle:
         members = bundle.getmembers()
         if not members or len(members) > limits.max_entries:
@@ -53,7 +58,9 @@ def validate_tar(archive: Path, limits: TarLimits = TarLimits()) -> tuple[tarfil
 
 
 def extract_tar_safely(
-    archive: Path, destination: Path, limits: TarLimits = TarLimits()
+    archive: Path,
+    destination: Path,
+    limits: TarLimits = DEFAULT_TAR_LIMITS,
 ) -> tuple[Path, ...]:
     members = validate_tar(archive, limits)
     destination.mkdir(parents=True, exist_ok=True)

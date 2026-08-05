@@ -10,7 +10,6 @@ from nowcast_service.downloads.remote import (
     validate_remote_url,
 )
 
-
 LIMITS = DownloadLimits(max_bytes=16, allowed_suffixes=(".tar",))
 
 
