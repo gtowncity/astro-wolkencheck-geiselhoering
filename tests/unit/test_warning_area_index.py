@@ -97,17 +97,17 @@ def test_current_numeric_dwd_schema_and_german_short_name_parse() -> None:
     assert index.ids_covering(12.40, 48.84) == ("809278123",)
 
 
-def test_cap_geocode_resolves_match_nonmatch_and_unknown() -> None:
+def test_cap_geocode_resolves_site_match_foreign_nonmatch_and_uncovered_unknown() -> None:
     index = parse_warning_area_geojson(
         feature_collection(),
         retrieved_at=RETRIEVED_AT,
     )
     matching = parse_cap_xml(cap_with_geocode("808401123"))
-    unknown = parse_cap_xml(cap_with_geocode("999999999"))
+    foreign = parse_cap_xml(cap_with_geocode("999999999"))
     info = matching.german_info()
-    unknown_info = unknown.german_info()
+    foreign_info = foreign.german_info()
 
-    assert info is not None and unknown_info is not None
+    assert info is not None and foreign_info is not None
     assert (
         index.match(
             alert=matching,
@@ -119,19 +119,19 @@ def test_cap_geocode_resolves_match_nonmatch_and_unknown() -> None:
     )
     assert (
         index.match(
-            alert=matching,
-            info=info,
-            longitude=10.0,
-            latitude=48.0,
+            alert=foreign,
+            info=foreign_info,
+            longitude=12.40,
+            latitude=48.84,
         )
         is LocationMatch.NO_MATCH
     )
     assert (
         index.match(
-            alert=unknown,
-            info=unknown_info,
-            longitude=12.40,
-            latitude=48.84,
+            alert=matching,
+            info=info,
+            longitude=10.0,
+            latitude=48.0,
         )
         is LocationMatch.UNKNOWN
     )
