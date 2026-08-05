@@ -89,18 +89,17 @@
       facts.append(...rows.map(([label, value]) => fact(label, value)));
 
       const details = article.querySelector("details");
-      const meta = article.querySelector(".awc-warning-meta");
       if (details) {
         const summary = details.querySelector("summary") || document.createElement("summary");
         summary.textContent = "Einordnung, Beschreibung und Verhalten";
         details.replaceChildren(
           summary,
+          facts,
           detailSection("Hardware-Einordnung", relevance.description),
           detailSection("Amtliche Beschreibung", warning.description || "Keine zusätzliche Beschreibung geliefert."),
           detailSection("DWD-Verhaltensempfehlung", warning.instruction || "Keine zusätzliche Handlungsanweisung geliefert."),
         );
       }
-      if (meta) meta.insertAdjacentElement("afterend", facts);
       article.setAttribute(
         "aria-label",
         `${warning.headline || warning.event || "Amtliche Warnung"}. ${relevance.label}.`,
