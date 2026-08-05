@@ -32,7 +32,29 @@ jobs:
       - run: python -m pip install -e ".[dev]"
       - run: python -m ruff check nowcast_service scripts tests
       - run: python -m mypy nowcast_service scripts
-      - run: python -m pytest -m "not e2e" --cov=nowcast_service --cov-branch --cov-report=term-missing --cov-fail-under=90
+      - name: Run core tests
+        id: core-tests
+        continue-on-error: true
+        run: >-
+          python -m pytest -m "not e2e"
+          --junitxml=pytest-report.xml
+          --cov=nowcast_service
+          --cov-branch
+          --cov-report=term-missing
+          --cov-report=xml:coverage.xml
+          --cov-fail-under=90
+      - name: Upload core test diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: core-test-report-${{ matrix.os }}
+          path: |
+            pytest-report.xml
+            coverage.xml
+          if-no-files-found: error
+      - name: Fail when core tests failed
+        if: steps.core-tests.outcome == 'failure'
+        run: exit 1
       - run: python scripts/build_public_site.py --output public-test
 
   browser-e2e:
