@@ -95,9 +95,35 @@
       : ["Seit dem letzten vollständigen Abruf keine sicherheitsrelevante Veränderung."];
   }
 
+  function introCopy(summary) {
+    if (!summary?.hasPrevious) {
+      return (
+        "Erster vollständiger Snapshot gespeichert; der Vergleich folgt nach " +
+        "dem nächsten vollständigen Abruf."
+      );
+    }
+    const count = finite(summary.meaningfulChangeCount)
+      ? summary.meaningfulChangeCount
+      : 0;
+    if (count === 0) {
+      return (
+        "Keine sicherheitsrelevante Veränderung seit dem vorherigen " +
+        "vollständigen Snapshot."
+      );
+    }
+    return count === 1
+      ? "1 sicherheitsrelevante Änderung seit dem vorherigen vollständigen Snapshot."
+      : `${count} sicherheitsrelevante Änderungen seit dem vorherigen vollständigen Snapshot.`;
+  }
+
   function render(summary) {
     const list = document.getElementById("awc-change-list");
     if (!list) return;
+    const intro =
+      document.getElementById("awc-change-summary") ||
+      document.querySelector(".awc-change-card .awc-card-head p");
+    if (intro) intro.textContent = introCopy(summary);
+
     const lines = summaryLines(summary);
     const currentLines = [...list.children].map((item) => item.textContent || "");
     if (
