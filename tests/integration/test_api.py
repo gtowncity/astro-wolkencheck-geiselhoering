@@ -99,9 +99,30 @@ def test_public_config_does_not_expose_coordinates(tmp_path: Path) -> None:
     assert "longitude" not in payload["location"]
 
 
-def test_root_serves_existing_forecast_application(tmp_path: Path) -> None:
+def test_root_serves_existing_forecast_application_with_live_assets(tmp_path: Path) -> None:
     response = client(tmp_path).get("/")
 
     assert response.status_code == 200
     assert "<title>Astro Wolkencheck - Geiselhöring</title>" in response.text
+    assert '<link rel="stylesheet" href="/local-live.css">' in response.text
+    assert '<link rel="stylesheet" href="/local-live-timeline.css">' in response.text
+    assert '<script src="/local-live.js" defer></script>' in response.text
+    assert '<script src="/local-live-timeline.js" defer></script>' in response.text
     assert response.headers["x-content-type-options"] == "nosniff"
+
+
+def test_local_live_timeline_assets_are_served(tmp_path: Path) -> None:
+    test_client = client(tmp_path)
+
+    script = test_client.get("/local-live-timeline.js")
+    stylesheet = test_client.get("/local-live-timeline.css")
+
+    assert script.status_code == 200
+    assert script.headers["content-type"].startswith("text/javascript")
+    assert "awc-timeline-path" in script.text
+    assert "frame.rainAtSite" in script.text
+
+    assert stylesheet.status_code == 200
+    assert stylesheet.headers["content-type"].startswith("text/css")
+    assert ".awc-timeline-chart" in stylesheet.text
+    assert '[data-rain="true"]' in stylesheet.text
