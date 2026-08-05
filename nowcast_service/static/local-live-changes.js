@@ -12,6 +12,7 @@
   });
   let requestedSnapshotId = null;
   let requestInFlight = false;
+  let lastSummary = null;
 
   function finite(value) {
     return typeof value === "number" && Number.isFinite(value);
@@ -97,8 +98,17 @@
   function render(summary) {
     const list = document.getElementById("awc-change-list");
     if (!list) return;
+    const lines = summaryLines(summary);
+    const currentLines = [...list.children].map((item) => item.textContent || "");
+    if (
+      list.dataset.source === "SERVER_HISTORY" &&
+      currentLines.length === lines.length &&
+      currentLines.every((copy, index) => copy === lines[index])
+    ) {
+      return;
+    }
     list.replaceChildren(
-      ...summaryLines(summary).map((copy) => {
+      ...lines.map((copy) => {
         const item = document.createElement("li");
         item.textContent = copy;
         return item;
@@ -112,7 +122,10 @@
     const snapshot = api?.getState?.().snapshot;
     if (!snapshot || requestInFlight) return;
     if (snapshot.hardwareRisk?.dataQuality !== "COMPLETE") return;
-    if (snapshot.snapshotId === requestedSnapshotId) return;
+    if (snapshot.snapshotId === requestedSnapshotId && lastSummary) {
+      render(lastSummary);
+      return;
+    }
 
     requestInFlight = true;
     try {
@@ -127,6 +140,7 @@
         return;
       }
       requestedSnapshotId = snapshot.snapshotId;
+      lastSummary = summary;
       render(summary);
     } catch (error) {
       console.warn("Serverseitiger Snapshotvergleich ist vorübergehend nicht verfügbar", error);
