@@ -170,6 +170,7 @@ _HARDWARE_EVENT_TERMS = (
     "STURM",
     "ORKAN",
     "HAGEL",
+    "BÖEN",
 )
 
 

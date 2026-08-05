@@ -6,7 +6,7 @@
   border-bottom: 5px solid currentColor;
   background: #25282d;
   color: #f7f8fa;
-  font: 500 1rem/1.45 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font: 500 16px/1.45 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
 #awc-live-panel *, #awc-live-panel *::before, #awc-live-panel *::after { box-sizing: border-box; }
 #awc-live-panel[data-state="RED"] { background: #681515; color: #fff5f5; }
@@ -19,19 +19,26 @@
 .awc-connection { margin: .1rem 0 0; padding: .35rem .65rem; border: 2px solid currentColor; border-radius: 999px; font-size: .85rem; font-weight: 800; }
 .awc-connection[data-connection="DISCONNECTED"] { border-style: dashed; }
 .awc-action { margin: .9rem 0 1rem; padding: .8rem 1rem; border-left: .55rem solid currentColor; background: rgb(0 0 0 / 22%); font-size: 1.05rem; font-weight: 800; }
-.awc-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 18rem), 1fr)); gap: .75rem; }
-.awc-card { min-width: 0; padding: .85rem; border: 1px solid rgb(255 255 255 / 38%); border-radius: .55rem; background: rgb(0 0 0 / 18%); }
+.awc-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); gap: .75rem; align-items: start; }
+.awc-card { min-width: 0; padding: .85rem; border: 1px solid rgb(255 255 255 / 38%); border-radius: .55rem; background: rgb(0 0 0 / 18%); overflow: hidden; }
 .awc-card h3 { margin: 0 0 .65rem; font-size: 1rem; }
 .awc-card dl { margin: 0; }
 .awc-card dl > div { display: grid; grid-template-columns: minmax(8rem, 1fr) minmax(7rem, 1.15fr); gap: .6rem; padding: .22rem 0; border-bottom: 1px solid rgb(255 255 255 / 16%); }
 .awc-card dt { font-weight: 650; }
-.awc-card dd { margin: 0; overflow-wrap: anywhere; text-align: right; }
+.awc-card dd { min-width: 0; margin: 0; overflow-wrap: anywhere; text-align: right; }
 .awc-detail, .awc-list-empty { margin: .65rem 0 0; color: inherit; opacity: .86; font-size: .88rem; }
-.awc-source-list, .awc-item-list { display: grid; gap: .45rem; }
-.awc-source, .awc-item-list article { display: grid; grid-template-columns: 1fr auto; gap: .2rem .6rem; padding: .5rem .6rem; border: 1px solid rgb(255 255 255 / 22%); border-radius: .4rem; background: rgb(0 0 0 / 14%); }
-.awc-source small, .awc-item-list small { grid-column: 1 / -1; opacity: .85; }
-.awc-source[data-state="FAILED"]::before, .awc-source[data-state="STALE"]::before { content: "⚠"; margin-right: .35rem; }
-.awc-source[data-state="LIVE"]::before { content: "✓"; margin-right: .35rem; }
+#awc-reasons { max-height: 6em; overflow: auto; overflow-wrap: anywhere; word-break: break-word; padding-right: .25rem; }
+.awc-source-list, .awc-item-list { display: grid; gap: .45rem; min-width: 0; }
+.awc-source, .awc-item-list article { min-width: 0; padding: .5rem .6rem; border: 1px solid rgb(255 255 255 / 22%); border-radius: .4rem; background: rgb(0 0 0 / 14%); }
+.awc-source { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: start; gap: .2rem .45rem; }
+.awc-source::before { grid-column: 1; grid-row: 1; }
+.awc-source strong { grid-column: 2; grid-row: 1; min-width: 0; overflow-wrap: anywhere; }
+.awc-source > span { grid-column: 3; grid-row: 1; min-width: 0; text-align: right; white-space: nowrap; }
+.awc-source small { grid-column: 1 / -1; min-width: 0; max-height: 4.8em; overflow: auto; overflow-wrap: anywhere; word-break: break-word; padding-right: .25rem; opacity: .85; }
+.awc-item-list article { display: grid; grid-template-columns: minmax(0, 1fr); gap: .2rem; }
+.awc-item-list small { min-width: 0; overflow-wrap: anywhere; opacity: .85; }
+.awc-source[data-state="FAILED"]::before, .awc-source[data-state="STALE"]::before { content: "⚠"; }
+.awc-source[data-state="LIVE"]::before { content: "✓"; }
 .awc-controls { display: flex; flex-wrap: wrap; gap: .55rem; margin-top: 1rem; }
 .awc-controls button, .awc-controls a { min-height: 2.75rem; padding: .65rem .9rem; border: 2px solid currentColor; border-radius: .35rem; background: #fff; color: #111; font: inherit; font-weight: 800; text-decoration: none; cursor: pointer; }
 .awc-controls button:hover, .awc-controls a:hover, .awc-controls button:focus-visible, .awc-controls a:focus-visible { outline: 3px solid #fff; outline-offset: 2px; }

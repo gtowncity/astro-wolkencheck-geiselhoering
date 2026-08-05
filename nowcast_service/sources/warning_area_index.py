@@ -156,6 +156,31 @@ def _text_property(properties: dict[str, Any], name: str, *, required: bool) -> 
     return value.strip()
 
 
+def _identifier_property(properties: dict[str, Any], name: str) -> str:
+    """Normalize a DWD identifier published either as JSON text or integer."""
+
+    value = properties.get(name)
+    if isinstance(value, bool):
+        raise WarningAreaError(f"Warning-area property is invalid: {name}")
+    if isinstance(value, int):
+        normalized = str(value)
+    elif isinstance(value, str):
+        normalized = value.strip()
+    else:
+        raise WarningAreaError(f"Warning-area property is invalid: {name}")
+    if not normalized or not normalized.isdecimal():
+        raise WarningAreaError(f"Warning-area property is invalid: {name}")
+    return normalized
+
+
+def _optional_short_name(properties: dict[str, Any]) -> str | None:
+    """Accept the current German WFS key and the previously observed legacy key."""
+
+    return _text_property(properties, "KURZNAME", required=False) or _text_property(
+        properties, "SHORTNAME", required=False
+    )
+
+
 def _geometry(feature: dict[str, Any]) -> BaseGeometry:
     geometry_data = feature.get("geometry")
     if not isinstance(geometry_data, dict):
@@ -208,7 +233,7 @@ def parse_warning_area_geojson(
         properties = raw_feature.get("properties")
         if not isinstance(properties, dict):
             raise WarningAreaError("Warning-area properties are missing")
-        warncell_id = cast(str, _text_property(properties, "WARNCELLID", required=True))
+        warncell_id = _identifier_property(properties, "WARNCELLID")
         name = cast(str, _text_property(properties, "NAME", required=True))
         if warncell_id in seen_ids:
             raise WarningAreaError(f"Duplicate warning-cell ID: {warncell_id}")
@@ -218,7 +243,7 @@ def parse_warning_area_geojson(
                 feature_id=feature_id,
                 warncell_id=warncell_id,
                 name=name,
-                short_name=_text_property(properties, "SHORTNAME", required=False),
+                short_name=_optional_short_name(properties),
                 contact=_text_property(properties, "CONTACT", required=False),
                 geometry=_geometry(raw_feature),
             )
