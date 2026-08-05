@@ -7,7 +7,8 @@ from collections import deque
 from collections.abc import Iterable
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import Any, cast
+from itertools import pairwise
+from typing import cast
 
 import numpy as np
 from numpy.typing import NDArray
@@ -438,7 +439,7 @@ def _moving_toward(
         if frame.nearest_component is not None
     )
     approach_steps = 0
-    for previous, current in zip(distances, distances[1:], strict=False):
+    for previous, current in pairwise(distances):
         consecutive = current[0] - previous[0] == 5
         approaching = previous[1] - current[1] >= config.min_approach_km
         if consecutive and approaching:
