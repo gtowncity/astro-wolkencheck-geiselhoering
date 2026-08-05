@@ -95,7 +95,7 @@
       const point = document.createElement("i");
       point.dataset.rain = String(Boolean(frame.rainAtSite));
       point.dataset.coverage = String(frame.coverageSufficient !== false);
-      point.style.left = `${clamp(lead / horizon * 100, 0, 100)}%`;
+      point.style.left = `${clamp(lead / horizon * 100, 1.5, 98.5)}%`;
       point.style.top = `${88 - clamp(distance, 0, 100) / 100 * 76}%`;
       const ring10 = Array.isArray(frame.rings)
         ? frame.rings.find((ring) => Math.round(ring.radiusKm) === 10)
