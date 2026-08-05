@@ -97,7 +97,7 @@ def test_archive_requires_every_xml_member_to_parse(tmp_path: Path) -> None:
         },
     )
 
-    with pytest.raises(CapArchiveError, match="broken.xml"):
+    with pytest.raises(CapArchiveError, match=r"broken\.xml"):
         load_cap_archive(
             archive,
             now=NOW,
