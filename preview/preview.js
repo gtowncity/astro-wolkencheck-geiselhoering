@@ -45,6 +45,16 @@
     document.body.insertBefore(app, anchor);
   }
 
+  function loadDashboardFallback() {
+    if (document.getElementById("live-dashboard-root")) return;
+    if (document.querySelector("script[data-preview-dashboard-fallback]")) return;
+
+    const script = document.createElement("script");
+    script.src = "../nowcast_service/static/local-live.js";
+    script.dataset.previewDashboardFallback = "true";
+    document.head.append(script);
+  }
+
   function placePreviewChrome() {
     const dashboard = document.getElementById("live-dashboard-root");
     if (!dashboard) return false;
@@ -65,6 +75,7 @@
   }
 
   ensureForecastShell();
+  window.setTimeout(loadDashboardFallback, 0);
 
   for (const button of document.querySelectorAll("[data-preview-state]")) {
     button.addEventListener("click", () => {
