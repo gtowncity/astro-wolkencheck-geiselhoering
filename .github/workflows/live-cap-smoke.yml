@@ -1,0 +1,51 @@
+name: DWD CAP Live Source Smoke
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - feature/dwd-nowcast-v4.3
+    paths:
+      - .github/workflows/live-cap-smoke.yml
+      - scripts/inspect_dwd_cap.py
+      - nowcast_service/sources/dwd_cap_directory.py
+      - nowcast_service/downloads/remote.py
+      - nowcast_service/downloads/safe_zip.py
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dwd-cap-live-source-smoke
+  cancel-in-progress: true
+
+jobs:
+  inspect-cap:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Repository auschecken
+        uses: actions/checkout@v6
+
+      - name: Python 3.12 einrichten
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Minimale Prüfabhängigkeiten installieren
+        run: |
+          python -m pip install "httpx>=0.28,<1" "defusedxml>=0.7.1,<1"
+          python -m pip install --no-deps -e .
+
+      - name: Aktuelle CAP-Statusarchive prüfen
+        run: python scripts/inspect_dwd_cap.py --output live-report/dwd-cap.json
+
+      - name: Prüfbericht hochladen
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dwd-cap-source-verification
+          path: live-report/dwd-cap.json
+          if-no-files-found: warn
+          retention-days: 7
