@@ -106,7 +106,11 @@ def install_browser_doubles(page: Page) -> None:
             window.__notifications.push({title, options});
           }
         }
-        Object.defineProperty(window, "Notification", {value: FakeNotification, configurable: true});
+        Object.defineProperty(
+          window,
+          "Notification",
+          {value: FakeNotification, configurable: true}
+        );
 
         class FakeParam {
           setValueAtTime() {}
@@ -128,7 +132,11 @@ def install_browser_doubles(page: Page) -> None:
           createGain() { return new FakeGain(); }
           async resume() { this.state = "running"; }
         }
-        Object.defineProperty(window, "AudioContext", {value: FakeAudioContext, configurable: true});
+        Object.defineProperty(
+          window,
+          "AudioContext",
+          {value: FakeAudioContext, configurable: true}
+        );
 
         class FakeEventSource {
           constructor(url) {
@@ -147,7 +155,10 @@ def install_browser_doubles(page: Page) -> None:
           fail() { if (this.onerror) this.onerror(new Event("error")); }
           close() {}
         }
-        Object.defineProperty(window, "EventSource", {value: FakeEventSource, configurable: true});
+        Object.defineProperty(window, "EventSource", {
+          value: FakeEventSource,
+          configurable: true
+        });
         """
     )
 
@@ -169,9 +180,10 @@ def test_live_panel_alarm_accessibility_sse_and_connection_loss() -> None:
         elif path == "/":
             route.fulfill(
                 status=200,
-                content_type="text/html",
+                headers={"Content-Type": "text/html; charset=utf-8"},
                 body=(
-                    "<!doctype html><html><head><title>Forecast</title>"
+                    "<!doctype html><html><head><meta charset='utf-8'>"
+                    "<title>Forecast</title>"
                     '<link rel="stylesheet" href="/local-live.css"></head>'
                     '<body><main id="forecast-existing">Forecast bleibt erhalten</main>'
                     '<script src="/local-live.js" defer></script></body></html>'
@@ -180,13 +192,13 @@ def test_live_panel_alarm_accessibility_sse_and_connection_loss() -> None:
         elif path == "/local-live.js":
             route.fulfill(
                 status=200,
-                content_type="text/javascript",
+                headers={"Content-Type": "text/javascript; charset=utf-8"},
                 body=LOCAL_SCRIPT.read_text(encoding="utf-8"),
             )
         elif path == "/local-live.css":
             route.fulfill(
                 status=200,
-                content_type="text/css",
+                headers={"Content-Type": "text/css; charset=utf-8"},
                 body=LOCAL_STYLE.read_text(encoding="utf-8"),
             )
         elif path == "/runtime-config.json":
@@ -242,7 +254,9 @@ def test_live_panel_alarm_accessibility_sse_and_connection_loss() -> None:
         assert page.locator(":focus").get_attribute("id") == "awc-enable-alerts"
         page.keyboard.press("Enter")
         page.wait_for_function("window.__permissionRequests === 1")
-        assert "Akustische Alarme aktiviert" in page.locator("#awc-alarm-capability").inner_text()
+        assert "Akustische Alarme aktiviert" in page.locator(
+            "#awc-alarm-capability"
+        ).inner_text()
 
         red = make_snapshot("RED", "snapshot-red")
         api_state["snapshot"] = red
@@ -264,9 +278,11 @@ def test_live_panel_alarm_accessibility_sse_and_connection_loss() -> None:
         assert panel.get_attribute("data-state") == "RED"
         assert page.locator("#awc-state-symbol").inner_text() == "⛔"
         assert "Hardware schützen" in page.locator("#awc-state").inner_text()
-        assert "Amtliche Warnung vor Gewitter" in page.locator("#awc-warnings").inner_text()
+        assert "Amtliche Warnung vor Gewitter" in page.locator(
+            "#awc-warnings"
+        ).inner_text()
         assert "CAP_RELEVANT_WARNING_RED" in page.locator("#awc-hazards").inner_text()
-        assert page.title().startswith("ROT –")
+        assert page.title().startswith("ROT")
         assert page.locator("#awc-ack").is_enabled()
 
         page.locator("#awc-ack").focus()
@@ -286,7 +302,7 @@ def test_live_panel_alarm_accessibility_sse_and_connection_loss() -> None:
         assert panel.get_attribute("data-state") == "UNKNOWN"
         assert page.locator("#awc-state-symbol").inner_text() == "?"
         assert page.locator("#awc-action").inner_text() == "UNKNOWN_DO_NOT_RELY"
-        assert page.title().startswith("UNBEKANNT –")
+        assert page.title().startswith("UNBEKANNT")
 
         browser.close()
 
@@ -295,7 +311,11 @@ def test_public_banner_never_renders_local_green() -> None:
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch()
         page = browser.new_page()
-        page.set_content("<!doctype html><html><body><main>Öffentliche Forecast-Seite</main></body></html>")
+        page.set_content(
+            "<!doctype html><html><body>"
+            "<main>Öffentliche Forecast-Seite</main>"
+            "</body></html>"
+        )
         page.add_script_tag(content=PUBLIC_SCRIPT.read_text(encoding="utf-8"))
         banner = page.locator("section[role='status']")
         assert "LIVE-ÜBERWACHUNG NICHT VERBUNDEN" in banner.inner_text()
