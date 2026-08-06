@@ -211,7 +211,7 @@
       <div class="decision-copy">
         <div class="eyebrow">Astronomischer Forecast</div>
         <h2 id="awc-forecast-placeholder-title">Forecast noch nicht gestartet</h2>
-        <p id="awc-forecast-placeholder-detail">Zeitraum und Forecast-Ort prüfen und anschließend „Forecast laden“ wählen. Vorher werden keine externen Wettermodelle abgefragt.</p>
+        <p id="awc-forecast-placeholder-detail">Zeitraum und Forecast-Ort prüfen und anschließend „Forecast laden“ wählen. Vorher werden keine externen Wettermodelle oder Satellitenbilder abgefragt.</p>
       </div>
       <div class="decision-facts">
         <div><span>Status</span><strong id="awc-forecast-placeholder-status">bereit</strong></div>
@@ -262,7 +262,7 @@
     wrapper.innerHTML = `
       <label for="awc-location-query">Forecast- und Satellitenort</label>
       <div class="awc-location-search-row">
-        <input id="awc-location-query" type="search" autocomplete="off" value="${selectedLocation.name}" aria-describedby="awc-location-status">
+        <input id="awc-location-query" type="search" autocomplete="off" aria-describedby="awc-location-status">
         <button id="awc-location-search" type="button">Ort suchen</button>
       </div>
       <select id="awc-location-results" aria-label="Gefundenen Ort auswählen" hidden></select>
@@ -273,6 +273,7 @@
     const query = byId("awc-location-query");
     const search = byId("awc-location-search");
     const results = byId("awc-location-results");
+    if (query) query.value = selectedLocation.name;
     query?.addEventListener("input", () => {
       locationConfirmed = query.value.trim() === selectedLocation.name;
       updateLocationCopy();
@@ -289,7 +290,7 @@
       const option = results.selectedOptions[0];
       if (!option?.dataset.location) return;
       const location = JSON.parse(option.dataset.location);
-      if (query.value !== location.name) query.value = location.name;
+      if (query && query.value !== location.name) query.value = location.name;
       setHidden(results, true);
       saveLocation(location);
     });
@@ -389,7 +390,7 @@
     setText(byId("awc-location-status"), statusCopy);
 
     const noteCopy = `
-        <strong>Kein automatischer Forecast-Abruf.</strong>
+        <strong>Kein automatischer Forecast- oder Satellitenabruf.</strong>
         <span>Zeitraum und Ort prüfen, dann bewusst starten. Forecast/Satellit: ${selectedLocation.name}. Live-Sicherheit: Geiselhöring.</span>
       `;
     setHtml(byId("awc-forecast-start-note"), noteCopy);
@@ -478,6 +479,14 @@
       && end > start;
   }
 
+  function forecastStartDetail() {
+    return {
+      location: { ...selectedLocation },
+      start: byId("startInput")?.value || null,
+      end: byId("endInput")?.value || null,
+    };
+  }
+
   function updateStartAvailability() {
     const refresh = byId("refreshBtn");
     if (!refresh || isForecastLoading()) return;
@@ -543,8 +552,8 @@
     updatePlaceholder({
       title: "Forecast noch nicht gestartet",
       detail: locationConfirmed
-        ? "Zeitraum und Forecast-Ort sind vorbereitet. Erst „Forecast laden“ startet externe Wettermodelle."
-        : "Bitte einen gefundenen Forecast-Ort auswählen. Vorher werden keine externen Wettermodelle abgefragt.",
+        ? "Zeitraum und Forecast-Ort sind vorbereitet. Erst „Forecast laden“ startet externe Wettermodelle und Satellitenbilder."
+        : "Bitte einen gefundenen Forecast-Ort auswählen. Vorher werden keine externen Wettermodelle oder Satellitenbilder abgefragt.",
       status: locationConfirmed ? "bereit" : "Ort auswählen",
       network: "wartet auf Start",
       tone: "neutral",
@@ -558,12 +567,6 @@
   }
 
   function observeUiChanges() {
-    const bodyObserver = new MutationObserver(queueSync);
-    bodyObserver.observe(document.body, {
-      childList: true,
-      subtree: true,
-    });
-
     const progress = byId("requestProgress");
     if (progress) {
       new MutationObserver(queueSync).observe(progress, {
@@ -587,6 +590,7 @@
 
   function startWatchdog() {
     window.setInterval(() => {
+      if (loadingStartedAt === null && !isForecastLoading()) return;
       queueSync();
       if (
         loadingStartedAt !== null
@@ -640,6 +644,11 @@
           });
           return;
         }
+        window.dispatchEvent(
+          new CustomEvent("awc:forecast-start", {
+            detail: forecastStartDetail(),
+          }),
+        );
         queueSync();
       },
       true,
