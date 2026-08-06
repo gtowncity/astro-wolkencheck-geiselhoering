@@ -122,7 +122,8 @@
     const intro =
       document.getElementById("awc-change-summary") ||
       document.querySelector(".awc-change-card .awc-card-head p");
-    if (intro) intro.textContent = introCopy(summary);
+    const nextIntro = introCopy(summary);
+    if (intro && intro.textContent !== nextIntro) intro.textContent = nextIntro;
 
     const lines = summaryLines(summary);
     const currentLines = [...list.children].map((item) => item.textContent || "");
@@ -188,11 +189,6 @@
       window.setTimeout(init, 100);
       return;
     }
-    new MutationObserver(refresh).observe(root, {
-      childList: true,
-      subtree: true,
-      characterData: true,
-    });
     refresh();
     window.setInterval(refresh, 3000);
   }
