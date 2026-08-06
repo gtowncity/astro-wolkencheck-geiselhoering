@@ -41,12 +41,13 @@ def html_shell() -> str:
         <article class='awc-alarm-card'>Alarm</article>
       </div>
     </section>
+    <div id='unrelated-live-churn'></div>
   </main>
 </body>
 </html>"""
 
 
-def test_forecast_recovery_does_not_trigger_endless_dom_updates() -> None:
+def test_forecast_recovery_ignores_unrelated_dom_churn() -> None:
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch()
         page = browser.new_page()
@@ -58,11 +59,20 @@ def test_forecast_recovery_does_not_trigger_endless_dom_updates() -> None:
         first = page.evaluate(
             "window.AstroWolkencheckForecastNetwork.getState().syncRuns"
         )
+        page.evaluate(
+            """
+            const target = document.getElementById('unrelated-live-churn');
+            for (let index = 0; index < 500; index += 1) {
+              target.textContent = `live-${index}`;
+              target.dataset.tone = index % 2 ? 'GREEN' : 'YELLOW';
+            }
+            """
+        )
         page.wait_for_timeout(650)
         second = page.evaluate(
             "window.AstroWolkencheckForecastNetwork.getState().syncRuns"
         )
-        assert second - first <= 2
+        assert second - first <= 1
 
         page.evaluate(
             """
@@ -80,7 +90,7 @@ def test_forecast_recovery_does_not_trigger_endless_dom_updates() -> None:
         after = page.evaluate(
             "window.AstroWolkencheckForecastNetwork.getState().syncRuns"
         )
-        assert after - during <= 2
+        assert after - during <= 1
 
         page.evaluate(
             "document.getElementById('requestProgress').hidden = true"

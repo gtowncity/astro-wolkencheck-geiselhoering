@@ -20,7 +20,7 @@ def png_bytes() -> bytes:
     return output.getvalue()
 
 
-def test_satellite_viewer_boots_without_forecast_shell() -> None:
+def test_satellite_viewer_waits_for_deliberate_forecast_start() -> None:
     latest = datetime.now(UTC).replace(second=0, microsecond=0)
     frames = [
         (latest - timedelta(minutes=10)).isoformat().replace("+00:00", "Z"),
@@ -28,10 +28,21 @@ def test_satellite_viewer_boots_without_forecast_shell() -> None:
     ]
     errors: list[str] = []
     console: list[str] = []
+    requests: list[str] = []
 
     def route_request(route: Route) -> None:
+        requests.append(route.request.url)
         path = urlparse(route.request.url).path
-        if path == "/api/v1/satellite/meta":
+        if path == "/":
+            route.fulfill(
+                status=200,
+                content_type="text/html",
+                body=(
+                    "<!doctype html><html><head><meta charset='utf-8'></head>"
+                    "<body><div class='awc-radar-visual'></div></body></html>"
+                ),
+            )
+        elif path == "/api/v1/satellite/meta":
             route.fulfill(
                 status=200,
                 content_type="application/json",
@@ -75,20 +86,45 @@ def test_satellite_viewer_boots_without_forecast_shell() -> None:
             else None,
         )
         page.route("**/*", route_request)
-        page.set_content(
-            "<!doctype html><html><head>"
-            "<base href='http://awc.test/'>"
-            "</head><body>"
-            "<div class='awc-radar-visual'></div>"
-            "</body></html>"
-        )
+        page.goto("http://awc.test/")
+        requests.clear()
         page.add_script_tag(content=SCRIPT.read_text(encoding="utf-8"))
-        page.locator("#awc-satellite-image").wait_for(state="attached")
+        page.locator("#awc-satellite-viewer").wait_for(state="attached")
+        page.wait_for_timeout(300)
+
+        assert requests == []
+        assert page.locator("#awc-satellite-status").inner_text() == (
+            "Wartet auf Zeitraum, Ort und „Forecast laden“."
+        )
+        assert page.evaluate(
+            "window.AstroWolkencheckSatelliteViewer.getState().enabled"
+        ) is False
+
+        page.evaluate(
+            """
+            window.dispatchEvent(new CustomEvent('awc:forecast-start', {
+              detail: {
+                location: {
+                  name: 'Geiselhöring',
+                  latitude: 48.84,
+                  longitude: 12.40,
+                },
+                start: '2026-08-07T22:00',
+                end: '2026-08-09T06:00',
+              },
+            }));
+            """
+        )
         page.wait_for_function(
             "document.getElementById('awc-satellite-image').complete && "
             "document.getElementById('awc-satellite-image').naturalWidth > 0"
         )
 
+        assert any("/api/v1/satellite/meta" in url for url in requests)
+        assert any("/api/v1/satellite/image" in url for url in requests)
+        assert page.evaluate(
+            "window.AstroWolkencheckSatelliteViewer.getState().enabled"
+        ) is True
         assert errors == []
         assert console == []
         browser.close()
