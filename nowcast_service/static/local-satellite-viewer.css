@@ -117,7 +117,9 @@
 }
 
 .awc-satellite-actions button:disabled,
-.awc-satellite-timeline button:disabled {
+.awc-satellite-timeline button:disabled,
+.awc-satellite-zoom button:disabled,
+.awc-satellite-actions select:disabled {
   opacity: .45;
   cursor: not-allowed;
 }
@@ -132,6 +134,11 @@
   color: var(--awc-muted, #a7b5c3);
   font-size: .66rem;
   overflow-wrap: anywhere;
+}
+
+.awc-satellite-status[data-tone="WAITING"] {
+  border-left-color: var(--awc-info, #69add9);
+  color: var(--awc-muted, #a7b5c3);
 }
 
 .awc-satellite-status[data-tone="FRESH"] {
@@ -165,6 +172,10 @@
   user-select: none;
 }
 
+.awc-satellite-viewer[data-enabled="false"] .awc-satellite-viewport {
+  cursor: default;
+}
+
 .awc-satellite-viewport.is-dragging {
   cursor: grabbing;
 }
@@ -175,7 +186,6 @@
   object-fit: contain;
   transform-origin: 0 0;
   transition: opacity .18s ease;
-  will-change: transform;
   pointer-events: none;
 }
 
@@ -209,8 +219,7 @@
   padding: 4px;
   border: 1px solid rgba(255, 255, 255, .2);
   border-radius: 8px;
-  background: rgba(5, 10, 15, .84);
-  backdrop-filter: blur(4px);
+  background: rgba(5, 10, 15, .92);
 }
 
 .awc-satellite-zoom button {
