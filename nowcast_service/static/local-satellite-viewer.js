@@ -4,7 +4,9 @@
   const API = "/api/v1/satellite";
   const METADATA_REFRESH_MS = 120000;
   const FRAME_DURATION_MS = 900;
+  const MAX_MOUNT_ATTEMPTS = 40;
   const state = {
+    enabled: false,
     product: "geocolour",
     metadata: null,
     frames: [],
@@ -22,9 +24,22 @@
     loadingMetadata: false,
     globalEventsBound: false,
     mountQueued: false,
+    mountAttempts: 0,
   };
 
   const byId = (id) => document.getElementById(id);
+
+  function setText(node, value) {
+    if (node && node.textContent !== value) node.textContent = value;
+  }
+
+  function setDisabled(node, value) {
+    if (node && node.disabled !== value) node.disabled = value;
+  }
+
+  function setHidden(node, value) {
+    if (node && node.hidden !== value) node.hidden = value;
+  }
 
   function formatTime(value) {
     const date = new Date(value);
@@ -60,7 +75,7 @@
 
   function viewerMarkup() {
     return `
-      <section id="awc-satellite-viewer" class="awc-satellite-viewer" aria-labelledby="awc-satellite-title">
+      <section id="awc-satellite-viewer" class="awc-satellite-viewer" data-enabled="false" aria-labelledby="awc-satellite-title">
         <header class="awc-satellite-toolbar">
           <div>
             <span class="awc-satellite-kicker">ECHTES SATELLITENBILD</span>
@@ -69,47 +84,58 @@
           <div class="awc-satellite-actions">
             <label>
               <span>Produkt</span>
-              <select id="awc-satellite-product" aria-label="Satellitenprodukt auswählen"></select>
+              <select id="awc-satellite-product" aria-label="Satellitenprodukt auswählen" disabled>
+                <option value="geocolour">Nach Forecast-Start verfügbar</option>
+              </select>
             </label>
-            <button id="awc-satellite-refresh" type="button" title="Aufnahmen neu laden">↻</button>
-            <button id="awc-satellite-fullscreen" type="button">Vollbild</button>
+            <button id="awc-satellite-refresh" type="button" title="Aufnahmen neu laden" disabled>↻</button>
+            <button id="awc-satellite-fullscreen" type="button" disabled>Vollbild</button>
           </div>
         </header>
-        <div id="awc-satellite-status" class="awc-satellite-status" data-tone="LOADING">
-          Verfügbare EUMETSAT-Aufnahmen werden geladen …
+        <div id="awc-satellite-status" class="awc-satellite-status" data-tone="WAITING">
+          Wartet auf Zeitraum, Ort und „Forecast laden“.
         </div>
-        <div id="awc-satellite-viewport" class="awc-satellite-viewport" tabindex="0" aria-label="Satellitenbild. Mit Mausrad oder Plus und Minus zoomen; im Zoom ziehen.">
+        <div id="awc-satellite-viewport" class="awc-satellite-viewport" tabindex="0" aria-label="Satellitenbild. Nach dem Forecast-Start mit Mausrad oder Plus und Minus zoomen; im Zoom ziehen.">
           <img id="awc-satellite-image" alt="Echtes EUMETSAT-Satellitenbild von Bayern mit rotem Orts-Pin" draggable="false">
-          <div id="awc-satellite-placeholder" class="awc-satellite-placeholder">Satellitenbild wird vorbereitet …</div>
+          <div id="awc-satellite-placeholder" class="awc-satellite-placeholder">Noch kein Satellitenabruf. Zuerst Zeitraum und Ort festlegen, dann „Forecast laden“ wählen.</div>
           <div class="awc-satellite-zoom" aria-label="Zoomsteuerung">
-            <button id="awc-satellite-zoom-out" type="button" aria-label="Herauszoomen">−</button>
-            <button id="awc-satellite-zoom-reset" type="button" aria-label="Zoom zurücksetzen">100 %</button>
-            <button id="awc-satellite-zoom-in" type="button" aria-label="Hineinzoomen">+</button>
+            <button id="awc-satellite-zoom-out" type="button" aria-label="Herauszoomen" disabled>−</button>
+            <button id="awc-satellite-zoom-reset" type="button" aria-label="Zoom zurücksetzen" disabled>100 %</button>
+            <button id="awc-satellite-zoom-in" type="button" aria-label="Hineinzoomen" disabled>+</button>
           </div>
         </div>
         <footer class="awc-satellite-timeline">
-          <button id="awc-satellite-prev" type="button" aria-label="Vorherige Aufnahme">◀</button>
-          <button id="awc-satellite-play" type="button" aria-label="Zeitverlauf abspielen">▶ Abspielen</button>
-          <input id="awc-satellite-range" type="range" min="0" max="0" value="0" step="1" aria-label="Aufnahmezeit auswählen">
-          <button id="awc-satellite-next" type="button" aria-label="Nächste Aufnahme">▶</button>
-          <strong id="awc-satellite-time">keine Aufnahme</strong>
+          <button id="awc-satellite-prev" type="button" aria-label="Vorherige Aufnahme" disabled>◀</button>
+          <button id="awc-satellite-play" type="button" aria-label="Zeitverlauf abspielen" disabled>▶ Abspielen</button>
+          <input id="awc-satellite-range" type="range" min="0" max="0" value="0" step="1" aria-label="Aufnahmezeit auswählen" disabled>
+          <button id="awc-satellite-next" type="button" aria-label="Nächste Aufnahme" disabled>▶</button>
+          <strong id="awc-satellite-time">wartet auf Start</strong>
         </footer>
-        <p class="awc-satellite-note">Quelle: EUMETSAT EUMETView · MTG-FCI · Bayern-Ausschnitt. Historische Frames sind bewusst älter; nur die neueste Aufnahme wird gegen die 20-Minuten-Aktualitätsgrenze geprüft.</p>
+        <p class="awc-satellite-note">Quelle nach bewusstem Start: EUMETSAT EUMETView · MTG-FCI · Bayern-Ausschnitt. Historische Frames sind bewusst älter; nur die neueste Aufnahme wird gegen die 20-Minuten-Aktualitätsgrenze geprüft.</p>
       </section>
     `;
   }
 
-  function queueMount() {
+  function queueMount(delay = 0) {
     if (state.mountQueued) return;
     state.mountQueued = true;
     window.setTimeout(() => {
       state.mountQueued = false;
-      mount();
-    }, 0);
+      if (mount()) {
+        state.mountAttempts = 0;
+        return;
+      }
+      state.mountAttempts += 1;
+      if (state.mountAttempts < MAX_MOUNT_ATTEMPTS) queueMount(100);
+    }, delay);
   }
 
   function mount() {
-    if (byId("awc-satellite-viewer")) return true;
+    const existing = byId("awc-satellite-viewer");
+    if (existing) {
+      updateControlAvailability();
+      return true;
+    }
     const host = document.querySelector(".awc-radar-visual");
     if (!host) return false;
 
@@ -121,21 +147,24 @@
     resetTransform();
     bindLocalEvents();
     bindGlobalEvents();
-    loadMetadata(state.product, { keepLatest: true, force: true });
-    if (state.refreshTimer === null) {
-      state.refreshTimer = window.setInterval(refreshMetadata, METADATA_REFRESH_MS);
+    updateControlAvailability();
+    if (state.enabled) {
+      startRefreshTimer();
+      loadMetadata(state.product, { keepLatest: true, force: true });
     }
     return true;
   }
 
   function bindLocalEvents() {
     byId("awc-satellite-product")?.addEventListener("change", (event) => {
+      if (!state.enabled) return;
       stopPlayback();
       state.product = event.target.value;
       resetTransform();
       loadMetadata(state.product, { keepLatest: true });
     });
     byId("awc-satellite-refresh")?.addEventListener("click", () => {
+      if (!state.enabled) return;
       loadMetadata(state.product, { keepLatest: true, force: true });
     });
     byId("awc-satellite-fullscreen")?.addEventListener("click", toggleFullscreen);
@@ -159,28 +188,62 @@
     viewport?.addEventListener("dblclick", resetTransform);
   }
 
+  function validLocation(detail) {
+    return detail
+      && Number.isFinite(detail.latitude)
+      && Number.isFinite(detail.longitude);
+  }
+
+  function applyLocation(detail) {
+    if (!validLocation(detail)) return false;
+    state.location = {
+      name: String(detail.name || "Ausgewählter Ort"),
+      latitude: detail.latitude,
+      longitude: detail.longitude,
+    };
+    return true;
+  }
+
   function bindGlobalEvents() {
     if (state.globalEventsBound) return;
     state.globalEventsBound = true;
     document.addEventListener("fullscreenchange", updateFullscreenButton);
     window.addEventListener("awc:forecast-location", (event) => {
-      const detail = event.detail;
-      if (!detail || !Number.isFinite(detail.latitude) || !Number.isFinite(detail.longitude)) {
-        return;
-      }
-      state.location = {
-        name: String(detail.name || "Ausgewählter Ort"),
-        latitude: detail.latitude,
-        longitude: detail.longitude,
-      };
-      if (state.index >= 0 && byId("awc-satellite-image")) {
+      if (!applyLocation(event.detail)) return;
+      if (state.enabled && state.index >= 0 && byId("awc-satellite-image")) {
         showFrame(state.index, { force: true });
       }
     });
+    window.addEventListener("awc:forecast-start", (event) => {
+      applyLocation(event.detail?.location);
+      enableViewer();
+    });
+  }
+
+  function startRefreshTimer() {
+    if (state.refreshTimer !== null) return;
+    state.refreshTimer = window.setInterval(refreshMetadata, METADATA_REFRESH_MS);
+  }
+
+  function enableViewer() {
+    state.enabled = true;
+    const viewer = byId("awc-satellite-viewer");
+    if (!viewer) {
+      queueMount();
+      return;
+    }
+    viewer.dataset.enabled = "true";
+    showPlaceholder("Echte EUMETSAT-Aufnahmen werden vorbereitet …", {
+      removeImage: false,
+    });
+    setStatus("EUMETSAT-Aufnahmen werden abgefragt …", "LOADING");
+    updateControlAvailability();
+    startRefreshTimer();
+    loadMetadata(state.product, { keepLatest: true, force: true });
   }
 
   async function loadMetadata(product, options = {}) {
-    if (state.loadingMetadata) return;
+    if (!state.enabled || state.loadingMetadata) return;
     state.loadingMetadata = true;
     setStatus("EUMETSAT-Aufnahmen werden abgefragt …", "LOADING");
     try {
@@ -189,16 +252,13 @@
       });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       const metadata = await response.json();
-      if (!byId("awc-satellite-viewer")) return;
+      if (!state.enabled || !byId("awc-satellite-viewer")) return;
       state.metadata = metadata;
       state.location ||= metadata.location || null;
       populateProducts(metadata.products || []);
       state.frames = Array.isArray(metadata.frames) ? metadata.frames : [];
       const range = byId("awc-satellite-range");
-      if (range) {
-        range.max = String(Math.max(0, state.frames.length - 1));
-        range.disabled = state.frames.length < 2;
-      }
+      if (range) range.max = String(Math.max(0, state.frames.length - 1));
       updateControlAvailability();
       if (!state.frames.length) {
         state.index = -1;
@@ -212,7 +272,7 @@
       showFrame(target, { force: options.force });
     } catch (error) {
       console.warn("EUMETSAT-Metadaten konnten nicht geladen werden", error);
-      if (byId("awc-satellite-viewer")) {
+      if (state.enabled && byId("awc-satellite-viewer")) {
         showPlaceholder(
           "EUMETSAT antwortet derzeit nicht. Es wird kein Ersatz- oder Fake-Bild angezeigt."
         );
@@ -220,15 +280,16 @@
       }
     } finally {
       state.loadingMetadata = false;
+      updateControlAvailability();
     }
   }
 
   async function refreshMetadata() {
+    if (!state.enabled || document.hidden || state.playing) return;
     if (!byId("awc-satellite-viewer")) {
       queueMount();
       return;
     }
-    if (document.hidden || state.playing) return;
     const previousLatest = state.frames.at(-1);
     const wasLatest = state.index === state.frames.length - 1;
     await loadMetadata(state.product, { keepLatest: wasLatest });
@@ -241,24 +302,34 @@
   function populateProducts(products) {
     const select = byId("awc-satellite-product");
     if (!select) return;
-    const current = state.product;
-    select.replaceChildren(...products.map((product) => {
-      const option = document.createElement("option");
-      option.value = product.key;
-      option.textContent = product.available
-        ? `${product.title}${product.fresh ? " · aktuell" : " · veraltet"}`
-        : `${product.title} · nicht verfügbar`;
-      option.disabled = !product.available;
-      option.title = product.description || "";
-      return option;
-    }));
-    if ([...select.options].some((option) => option.value === current && !option.disabled)) {
-      select.value = current;
+    const signature = JSON.stringify(
+      products.map((product) => [
+        product.key,
+        product.title,
+        product.available,
+        product.fresh,
+      ]),
+    );
+    if (select.dataset.signature !== signature) {
+      select.replaceChildren(...products.map((product) => {
+        const option = document.createElement("option");
+        option.value = product.key;
+        option.textContent = product.available
+          ? `${product.title}${product.fresh ? " · aktuell" : " · veraltet"}`
+          : `${product.title} · nicht verfügbar`;
+        option.disabled = !product.available;
+        option.title = product.description || "";
+        return option;
+      }));
+      select.dataset.signature = signature;
+    }
+    if ([...select.options].some((option) => option.value === state.product && !option.disabled)) {
+      select.value = state.product;
     }
   }
 
   function showFrame(index, options = {}) {
-    if (!state.frames.length) return;
+    if (!state.enabled || !state.frames.length) return;
     const bounded = Math.max(0, Math.min(state.frames.length - 1, index));
     if (bounded === state.index && !options.force) return;
     state.index = bounded;
@@ -268,28 +339,26 @@
     const range = byId("awc-satellite-range");
     if (!image || !placeholder) return;
 
-    if (range) range.value = String(bounded);
-    placeholder.hidden = false;
-    placeholder.textContent = "Echtes Satellitenbild wird geladen …";
+    if (range && range.value !== String(bounded)) range.value = String(bounded);
+    setHidden(placeholder, false);
+    setText(placeholder, "Echtes Satellitenbild wird geladen …");
     image.classList.add("is-loading");
     const url = imageUrl(frame);
     image.onload = () => {
-      if (!image.isConnected) return;
-      placeholder.hidden = true;
+      if (!image.isConnected || image.src !== new URL(url, window.location.href).href) return;
+      setHidden(placeholder, true);
       image.classList.remove("is-loading");
       updateFrameStatus(frame);
-      preloadFrame(bounded + 1);
     };
     image.onerror = () => {
       if (!image.isConnected) return;
       image.classList.remove("is-loading");
-      placeholder.hidden = false;
-      placeholder.textContent = "Dieser echte EUMETSAT-Frame konnte nicht geladen werden.";
+      setHidden(placeholder, false);
+      setText(placeholder, "Dieser echte EUMETSAT-Frame konnte nicht geladen werden.");
       setStatus("Aufnahme nicht verfügbar", "ERROR");
     };
-    image.src = url;
-    const timeNode = byId("awc-satellite-time");
-    if (timeNode) timeNode.textContent = formatTime(frame);
+    if (image.getAttribute("src") !== url || options.force) image.src = url;
+    setText(byId("awc-satellite-time"), formatTime(frame));
     updateControlAvailability();
   }
 
@@ -313,31 +382,44 @@
   function setStatus(copy, tone) {
     const node = byId("awc-satellite-status");
     if (!node) return;
-    node.textContent = copy;
-    node.dataset.tone = tone;
+    setText(node, copy);
+    if (node.dataset.tone !== tone) node.dataset.tone = tone;
   }
 
-  function showPlaceholder(copy) {
+  function showPlaceholder(copy, options = {}) {
     const image = byId("awc-satellite-image");
     const placeholder = byId("awc-satellite-placeholder");
-    if (image) image.removeAttribute("src");
+    if (image && options.removeImage !== false && image.hasAttribute("src")) {
+      image.removeAttribute("src");
+    }
     if (placeholder) {
-      placeholder.hidden = false;
-      placeholder.textContent = copy;
+      setHidden(placeholder, false);
+      setText(placeholder, copy);
     }
   }
 
   function updateControlAvailability() {
-    const hasFrames = state.frames.length > 0;
-    const prev = byId("awc-satellite-prev");
-    const next = byId("awc-satellite-next");
-    const play = byId("awc-satellite-play");
-    if (prev) prev.disabled = !hasFrames || state.index <= 0;
-    if (next) next.disabled = !hasFrames || state.index >= state.frames.length - 1;
-    if (play) play.disabled = state.frames.length < 2;
+    const viewer = byId("awc-satellite-viewer");
+    if (viewer) viewer.dataset.enabled = String(state.enabled);
+    const hasFrames = state.enabled && state.frames.length > 0;
+    const hasMultiple = hasFrames && state.frames.length > 1;
+    setDisabled(byId("awc-satellite-product"), !state.enabled || state.loadingMetadata);
+    setDisabled(byId("awc-satellite-refresh"), !state.enabled || state.loadingMetadata);
+    setDisabled(byId("awc-satellite-fullscreen"), !state.enabled);
+    setDisabled(byId("awc-satellite-prev"), !hasFrames || state.index <= 0);
+    setDisabled(
+      byId("awc-satellite-next"),
+      !hasFrames || state.index >= state.frames.length - 1,
+    );
+    setDisabled(byId("awc-satellite-play"), !hasMultiple);
+    setDisabled(byId("awc-satellite-range"), !hasMultiple);
+    setDisabled(byId("awc-satellite-zoom-out"), !hasFrames);
+    setDisabled(byId("awc-satellite-zoom-reset"), !hasFrames);
+    setDisabled(byId("awc-satellite-zoom-in"), !hasFrames);
   }
 
   function togglePlayback() {
+    if (!state.enabled) return;
     if (state.playing) {
       stopPlayback();
       return;
@@ -345,8 +427,7 @@
     if (state.frames.length < 2) return;
     if (state.index >= state.frames.length - 1) showFrame(0, { force: true });
     state.playing = true;
-    const button = byId("awc-satellite-play");
-    if (button) button.textContent = "Ⅱ Pause";
+    setText(byId("awc-satellite-play"), "Ⅱ Pause");
     state.playTimer = window.setInterval(() => {
       const next = state.index + 1;
       if (next >= state.frames.length) {
@@ -361,17 +442,11 @@
     state.playing = false;
     if (state.playTimer !== null) window.clearInterval(state.playTimer);
     state.playTimer = null;
-    const button = byId("awc-satellite-play");
-    if (button) button.textContent = "▶ Abspielen";
-  }
-
-  function preloadFrame(index) {
-    if (index < 0 || index >= state.frames.length) return;
-    const preload = new Image();
-    preload.src = imageUrl(state.frames[index]);
+    setText(byId("awc-satellite-play"), "▶ Abspielen");
   }
 
   function zoomBy(delta, originX = 0, originY = 0) {
+    if (!state.enabled || !state.frames.length) return;
     const previous = state.scale;
     const next = Math.max(1, Math.min(6, previous + delta));
     if (next === previous) return;
@@ -384,6 +459,7 @@
   }
 
   function onWheel(event) {
+    if (!state.enabled || !state.frames.length) return;
     event.preventDefault();
     const viewport = byId("awc-satellite-viewport");
     if (!viewport) return;
@@ -396,7 +472,7 @@
   }
 
   function onPointerDown(event) {
-    if (state.scale <= 1) return;
+    if (!state.enabled || state.scale <= 1) return;
     const viewport = event.currentTarget;
     state.pointerId = event.pointerId;
     state.pointerX = event.clientX;
@@ -438,10 +514,9 @@
   function applyTransform() {
     const image = byId("awc-satellite-image");
     const reset = byId("awc-satellite-zoom-reset");
-    if (image) {
-      image.style.transform = `translate(${state.translateX}px, ${state.translateY}px) scale(${state.scale})`;
-    }
-    if (reset) reset.textContent = `${Math.round(state.scale * 100)} %`;
+    const transform = `translate(${state.translateX}px, ${state.translateY}px) scale(${state.scale})`;
+    if (image && image.style.transform !== transform) image.style.transform = transform;
+    setText(reset, `${Math.round(state.scale * 100)} %`);
   }
 
   function resetTransform() {
@@ -452,6 +527,7 @@
   }
 
   async function toggleFullscreen() {
+    if (!state.enabled) return;
     const viewer = byId("awc-satellite-viewer");
     if (!viewer) return;
     try {
@@ -467,32 +543,28 @@
   }
 
   function updateFullscreenButton() {
-    const button = byId("awc-satellite-fullscreen");
-    if (!button) return;
-    button.textContent = document.fullscreenElement
-      ? "Vollbild schließen"
-      : "Vollbild";
+    setText(
+      byId("awc-satellite-fullscreen"),
+      document.fullscreenElement ? "Vollbild schließen" : "Vollbild",
+    );
     resetTransform();
-  }
-
-  function observeDashboard() {
-    new MutationObserver(() => {
-      if (!byId("awc-satellite-viewer") && document.querySelector(".awc-radar-visual")) {
-        queueMount();
-      }
-    }).observe(document.documentElement, { childList: true, subtree: true });
   }
 
   function boot() {
     bindGlobalEvents();
-    observeDashboard();
-    if (!mount()) window.setTimeout(queueMount, 120);
+    queueMount();
   }
 
   window.AstroWolkencheckSatelliteViewer = Object.freeze({
     mount: queueMount,
-    refresh: () => loadMetadata(state.product, { keepLatest: true, force: true }),
+    start: enableViewer,
+    refresh: () => {
+      if (state.enabled) {
+        loadMetadata(state.product, { keepLatest: true, force: true });
+      }
+    },
     getState: () => ({
+      enabled: state.enabled,
       product: state.product,
       frameCount: state.frames.length,
       index: state.index,
@@ -504,6 +576,6 @@
 
   boot();
   if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", queueMount, { once: true });
+    document.addEventListener("DOMContentLoaded", () => queueMount(), { once: true });
   }
 })();
