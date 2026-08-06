@@ -223,10 +223,18 @@ def add_modules(page: Page) -> None:
     )
 
 
+def wait_for_satellite_image(page: Page) -> None:
+    page.wait_for_function(
+        "document.getElementById('awc-satellite-image').complete && "
+        "document.getElementById('awc-satellite-image').naturalWidth > 0"
+    )
+
+
 def test_deferred_forecast_compact_layout_and_satellite_controls() -> None:
     requests: list[str] = []
 
     def route_request(route: Route) -> None:
+        requests.append(route.request.url)
         parsed = urlparse(route.request.url)
         path = parsed.path
         if path == "/":
@@ -239,7 +247,6 @@ def test_deferred_forecast_compact_layout_and_satellite_controls() -> None:
                 body=json.dumps(satellite_metadata(product)),
             )
         elif path == "/api/v1/satellite/image":
-            requests.append(route.request.url)
             route.fulfill(status=200, content_type="image/png", body=satellite_png())
         elif parsed.netloc == "geocoding-api.open-meteo.com":
             route.fulfill(
@@ -263,7 +270,6 @@ def test_deferred_forecast_compact_layout_and_satellite_controls() -> None:
             "api.open-meteo.com",
             "ensemble-api.open-meteo.com",
         }:
-            requests.append(route.request.url)
             route.fulfill(status=200, content_type="application/json", body="{}")
         else:
             route.fulfill(status=404, body="not found")
@@ -275,13 +281,17 @@ def test_deferred_forecast_compact_layout_and_satellite_controls() -> None:
         page.route("**/*", route_request)
         page.goto("http://awc.test/")
         add_modules(page)
-        page.locator("#awc-satellite-image").wait_for(state="attached")
-        page.wait_for_function(
-            "document.getElementById('awc-satellite-image').complete && "
-            "document.getElementById('awc-satellite-image').naturalWidth > 0"
-        )
+        page.locator("#awc-satellite-viewer").wait_for(state="attached")
+        page.wait_for_timeout(400)
 
-        assert [url for url in requests if "open-meteo.com" in url] == []
+        assert page.evaluate(
+            "window.AstroWolkencheckSatelliteViewer.getState().enabled"
+        ) is False
+        assert not any("/api/v1/satellite/" in url for url in requests)
+        assert not any("api.open-meteo.com" in url for url in requests)
+        assert page.locator("#awc-satellite-status").inner_text() == (
+            "Wartet auf Zeitraum, Ort und „Forecast laden“."
+        )
         assert page.locator("#awc-forecast-placeholder-title").inner_text() == (
             "Forecast noch nicht gestartet"
         )
@@ -292,14 +302,26 @@ def test_deferred_forecast_compact_layout_and_satellite_controls() -> None:
             "node => getComputedStyle(node).display"
         ) == "block"
 
+        requests.clear()
         with page.expect_request(
             lambda request: "api.open-meteo.com" in request.url
         ):
             page.locator("#refreshBtn").click()
+        wait_for_satellite_image(page)
+        assert page.evaluate(
+            "window.AstroWolkencheckSatelliteViewer.getState().enabled"
+        ) is True
+
         forecast_url = next(url for url in requests if "api.open-meteo.com" in url)
-        query = parse_qs(urlparse(forecast_url).query)
-        assert query["latitude"] == ["48.84"]
-        assert query["longitude"] == ["12.4"]
+        forecast_query = parse_qs(urlparse(forecast_url).query)
+        assert forecast_query["latitude"] == ["48.84"]
+        assert forecast_query["longitude"] == ["12.4"]
+        satellite_url = next(
+            url for url in requests if "/api/v1/satellite/image" in url
+        )
+        satellite_query = parse_qs(urlparse(satellite_url).query)
+        assert satellite_query["latitude"] == ["48.84"]
+        assert satellite_query["longitude"] == ["12.4"]
 
         page.locator("#awc-location-query").fill("Muenchen")
         page.locator("#awc-location-search").click()
@@ -315,14 +337,15 @@ def test_deferred_forecast_compact_layout_and_satellite_controls() -> None:
         ):
             page.locator("#refreshBtn").click()
         forecast_url = next(url for url in requests if "api.open-meteo.com" in url)
-        query = parse_qs(urlparse(forecast_url).query)
-        assert query["latitude"] == ["48.137"]
-        assert query["longitude"] == ["11.575"]
+        forecast_query = parse_qs(urlparse(forecast_url).query)
+        assert forecast_query["latitude"] == ["48.137"]
+        assert forecast_query["longitude"] == ["11.575"]
 
         page.locator("#awc-satellite-product").select_option("infrared")
         page.wait_for_function(
             "window.AstroWolkencheckSatelliteViewer.getState().product === 'infrared'"
         )
+        wait_for_satellite_image(page)
         assert page.locator("#awc-satellite-range").get_attribute("max") == "2"
 
         page.locator("#awc-satellite-zoom-in").click()
@@ -350,20 +373,21 @@ def test_deferred_forecast_compact_layout_and_satellite_controls() -> None:
         page.locator("#awc-satellite-play").click()
 
         page.locator(".awc-radar-visual").evaluate("node => node.replaceChildren()")
+        page.evaluate("window.AstroWolkencheckSatelliteViewer.mount()")
         page.locator("#awc-satellite-viewer").wait_for(state="attached")
+        wait_for_satellite_image(page)
 
         ARTIFACTS.mkdir(exist_ok=True)
         page.screenshot(
             path=str(ARTIFACTS / "forecast-satellite-desktop.png"),
             full_page=True,
         )
+
+        page.set_viewport_size({"width": 390, "height": 844})
         no_overflow = (
             "document.documentElement.scrollWidth <= "
             "document.documentElement.clientWidth"
         )
-        assert page.evaluate(no_overflow)
-
-        page.set_viewport_size({"width": 390, "height": 844})
         assert page.evaluate(no_overflow)
         page.screenshot(
             path=str(ARTIFACTS / "forecast-satellite-mobile.png"),
