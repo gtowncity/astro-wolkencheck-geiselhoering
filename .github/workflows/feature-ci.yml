@@ -6,6 +6,7 @@ on:
       - feature/dwd-nowcast-v4.3
       - feature/ui-live-dashboard-v4.3
       - feature/forecast-loading-layout-v4.3
+      - "hotfix/**"
   workflow_dispatch:
 
 permissions:
