@@ -373,18 +373,38 @@ def create_app(
                     longitude=selected_longitude,
                     location_name=selected_name,
                 )
+                headers = {
+                    "X-Satellite-Provider": "EUMETSAT",
+                    "X-Satellite-Product": latest.product.key,
+                    "X-Satellite-Latest": "true",
+                    "X-Satellite-Retrieved-At": latest.retrieved_at.isoformat().replace(
+                        "+00:00", "Z"
+                    ),
+                    "X-Satellite-Observation-Time-Source": latest.observation_time_source,
+                    "X-Satellite-Cache": "BYPASS",
+                }
+                if latest.observed_at is not None:
+                    age_minutes = max(
+                        0.0,
+                        (latest.retrieved_at - latest.observed_at).total_seconds() / 60,
+                    )
+                    headers.update(
+                        {
+                            "X-Satellite-Observation-Time": latest.observed_at.isoformat().replace(
+                                "+00:00", "Z"
+                            ),
+                            "X-Satellite-Age-Minutes": f"{age_minutes:.1f}",
+                            "X-Satellite-Fresh": "true"
+                            if age_minutes <= 20
+                            else "false",
+                        }
+                    )
+                else:
+                    headers["X-Satellite-Fresh"] = "unknown"
                 return Response(
                     content=latest.png,
                     media_type="image/png",
-                    headers={
-                        "X-Satellite-Provider": "EUMETSAT",
-                        "X-Satellite-Product": latest.product.key,
-                        "X-Satellite-Latest": "true",
-                        "X-Satellite-Retrieved-At": latest.retrieved_at.isoformat().replace(
-                            "+00:00", "Z"
-                        ),
-                        "X-Satellite-Cache": "BYPASS",
-                    },
+                    headers=headers,
                 )
 
             observed_at = _parse_utc(time)
