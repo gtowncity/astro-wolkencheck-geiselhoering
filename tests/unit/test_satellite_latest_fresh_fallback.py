@@ -4,7 +4,7 @@ from pathlib import Path
 import pytest
 from PIL import Image
 
-from nowcast_service.satellite_image import SatelliteImageService
+from nowcast_service.satellite_image import SatelliteImageService, SatelliteProduct
 from nowcast_service.satellite_latest import (
     _LatestCandidate,
     render_latest_satellite_image,
@@ -19,9 +19,13 @@ async def test_stale_cloudtype_automatically_uses_fresh_infrared(
     reference = datetime.now(UTC).replace(microsecond=0)
     calls: list[str] = []
 
-    async def fake_candidate(*, service: object, product: object) -> _LatestCandidate:
+    async def fake_candidate(
+        *,
+        service: object,
+        product: SatelliteProduct,
+    ) -> _LatestCandidate:
         del service
-        key = getattr(product, "key")
+        key = product.key
         calls.append(key)
         age = 70 if key == "cloudtype" else 8
         return _LatestCandidate(
@@ -61,10 +65,13 @@ async def test_fresh_requested_product_is_not_replaced(
     reference = datetime.now(UTC).replace(microsecond=0)
     calls: list[str] = []
 
-    async def fake_candidate(*, service: object, product: object) -> _LatestCandidate:
+    async def fake_candidate(
+        *,
+        service: object,
+        product: SatelliteProduct,
+    ) -> _LatestCandidate:
         del service
-        key = getattr(product, "key")
-        calls.append(key)
+        calls.append(product.key)
         return _LatestCandidate(
             image=Image.new("RGB", (1200, 850), (20, 30, 40)),
             product=product,
