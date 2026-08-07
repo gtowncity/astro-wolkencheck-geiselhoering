@@ -22,6 +22,7 @@ from nowcast_service.runtime.change_summary import (
 )
 from nowcast_service.runtime.coordinator import RuntimeCoordinator
 from nowcast_service.satellite_image import SatelliteImageError, SatelliteImageService
+from nowcast_service.satellite_latest import render_latest_satellite_image
 from nowcast_service.security import CSRF_COOKIE, new_csrf_token, require_csrf
 from nowcast_service.sources.runtime_base import SourceRunner
 
@@ -356,22 +357,43 @@ def create_app(
         longitude: float | None = None,
         location_name: str | None = None,
     ) -> Response:
+        selected_latitude = (
+            latitude if latitude is not None else config.location.latitude
+        )
+        selected_longitude = (
+            longitude if longitude is not None else config.location.longitude
+        )
+        selected_name = location_name or config.location.name
         try:
-            observed_at: datetime
             if time is None:
-                metadata = await satellite_service.metadata(product)
-                frames = metadata.get("frames")
-                if not isinstance(frames, list) or not frames:
-                    raise SatelliteImageError("No satellite frames are available")
-                observed_at = _parse_utc(str(frames[-1]))
-            else:
-                observed_at = _parse_utc(time)
+                latest = await render_latest_satellite_image(
+                    service=satellite_service,
+                    product_key=product,
+                    latitude=selected_latitude,
+                    longitude=selected_longitude,
+                    location_name=selected_name,
+                )
+                return Response(
+                    content=latest.png,
+                    media_type="image/png",
+                    headers={
+                        "X-Satellite-Provider": "EUMETSAT",
+                        "X-Satellite-Product": latest.product.key,
+                        "X-Satellite-Latest": "true",
+                        "X-Satellite-Retrieved-At": latest.retrieved_at.isoformat().replace(
+                            "+00:00", "Z"
+                        ),
+                        "X-Satellite-Cache": "BYPASS",
+                    },
+                )
+
+            observed_at = _parse_utc(time)
             result = await satellite_service.render(
                 product_key=product,
                 observed_at=observed_at,
-                latitude=latitude if latitude is not None else config.location.latitude,
-                longitude=longitude if longitude is not None else config.location.longitude,
-                location_name=location_name or config.location.name,
+                latitude=selected_latitude,
+                longitude=selected_longitude,
+                location_name=selected_name,
             )
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -391,6 +413,7 @@ def create_app(
             headers={
                 "X-Satellite-Provider": "EUMETSAT",
                 "X-Satellite-Product": result.product.key,
+                "X-Satellite-Latest": "false",
                 "X-Satellite-Observation-Time": result.observed_at.isoformat().replace(
                     "+00:00", "Z"
                 ),
