@@ -205,7 +205,7 @@ async def test_data_store_candidates_use_recent_hour_products(
         datetime(2026, 8, 7, 7, 10, tzinfo=UTC),
         datetime(2026, 8, 7, 7, 0, tzinfo=UTC),
     )
-    assert any("EO%3AEUM%3ADAT%3A1022" in url for url in BrowseAsyncClient.requested_urls)
+    assert any("EO%3AEUM%3ADAT%3A0662" in url for url in BrowseAsyncClient.requested_urls)
 
 
 @pytest.mark.asyncio
