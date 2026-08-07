@@ -54,17 +54,15 @@
     }).format(date);
   }
 
-  function frameAgeMinutes(value) {
-    const timestamp = new Date(value).getTime();
-    if (!Number.isFinite(timestamp)) return null;
-    return Math.max(0, (Date.now() - timestamp) / 60000);
-  }
-
-  function imageUrl(frame) {
+  function imageUrl(frame, latest = false) {
     const params = new URLSearchParams({
       product: state.product,
-      time: frame,
     });
+    if (latest) {
+      params.set("_live", String(Date.now()));
+    } else {
+      params.set("time", frame);
+    }
     if (state.location) {
       params.set("latitude", String(state.location.latitude));
       params.set("longitude", String(state.location.longitude));
@@ -111,7 +109,7 @@
           <button id="awc-satellite-next" type="button" aria-label="Nächste Aufnahme" disabled>▶</button>
           <strong id="awc-satellite-time">wartet auf Start</strong>
         </footer>
-        <p class="awc-satellite-note">Quelle nach bewusstem Start: EUMETSAT EUMETView · MTG-FCI · Bayern-Ausschnitt. Historische Frames sind bewusst älter; nur die neueste Aufnahme wird gegen die 20-Minuten-Aktualitätsgrenze geprüft.</p>
+        <p class="awc-satellite-note">Quelle nach bewusstem Start: EUMETSAT EUMETView · MTG-FCI · Bayern-Ausschnitt. Die rechte Endposition lädt die neueste verfügbare Aufnahme direkt per GetMap; die Zeitliste für historische Frames kann bei EUMETSAT etwas später aktualisiert werden.</p>
       </section>
     `;
   }
@@ -161,7 +159,7 @@
       stopPlayback();
       state.product = event.target.value;
       resetTransform();
-      loadMetadata(state.product, { keepLatest: true });
+      loadMetadata(state.product, { keepLatest: true, force: true });
     });
     byId("awc-satellite-refresh")?.addEventListener("click", () => {
       if (!state.enabled) return;
@@ -290,13 +288,8 @@
       queueMount();
       return;
     }
-    const previousLatest = state.frames.at(-1);
     const wasLatest = state.index === state.frames.length - 1;
-    await loadMetadata(state.product, { keepLatest: wasLatest });
-    const nextLatest = state.frames.at(-1);
-    if (previousLatest && nextLatest && previousLatest !== nextLatest) {
-      setStatus("Neue EUMETSAT-Aufnahme verfügbar", "FRESH");
-    }
+    await loadMetadata(state.product, { keepLatest: wasLatest, force: wasLatest });
   }
 
   function populateProducts(products) {
@@ -307,7 +300,6 @@
         product.key,
         product.title,
         product.available,
-        product.fresh,
       ]),
     );
     if (select.dataset.signature !== signature) {
@@ -315,10 +307,12 @@
         const option = document.createElement("option");
         option.value = product.key;
         option.textContent = product.available
-          ? `${product.title}${product.fresh ? " · aktuell" : " · veraltet"}`
+          ? `${product.title} · Livebild direkt`
           : `${product.title} · nicht verfügbar`;
         option.disabled = !product.available;
-        option.title = product.description || "";
+        option.title = product.available
+          ? `${product.description || ""} Neueste Aufnahme wird direkt von EUMETView geladen.`.trim()
+          : product.description || "";
         return option;
       }));
       select.dataset.signature = signature;
@@ -334,6 +328,7 @@
     if (bounded === state.index && !options.force) return;
     state.index = bounded;
     const frame = state.frames[bounded];
+    const latest = bounded === state.frames.length - 1;
     const image = byId("awc-satellite-image");
     const placeholder = byId("awc-satellite-placeholder");
     const range = byId("awc-satellite-range");
@@ -341,42 +336,44 @@
 
     if (range && range.value !== String(bounded)) range.value = String(bounded);
     setHidden(placeholder, false);
-    setText(placeholder, "Echtes Satellitenbild wird geladen …");
+    setText(
+      placeholder,
+      latest
+        ? "Neueste EUMETSAT-Aufnahme wird direkt geladen …"
+        : "Historisches Satellitenbild wird geladen …",
+    );
     image.classList.add("is-loading");
-    const url = imageUrl(frame);
+    const url = imageUrl(frame, latest);
     image.onload = () => {
       if (!image.isConnected || image.src !== new URL(url, window.location.href).href) return;
       setHidden(placeholder, true);
       image.classList.remove("is-loading");
-      updateFrameStatus(frame);
+      updateFrameStatus(frame, latest);
     };
     image.onerror = () => {
       if (!image.isConnected) return;
       image.classList.remove("is-loading");
       setHidden(placeholder, false);
-      setText(placeholder, "Dieser echte EUMETSAT-Frame konnte nicht geladen werden.");
+      setText(placeholder, "Diese echte EUMETSAT-Aufnahme konnte nicht geladen werden.");
       setStatus("Aufnahme nicht verfügbar", "ERROR");
     };
     if (image.getAttribute("src") !== url || options.force) image.src = url;
-    setText(byId("awc-satellite-time"), formatTime(frame));
+    setText(
+      byId("awc-satellite-time"),
+      latest ? "LIVE · neueste verfügbare Aufnahme" : formatTime(frame),
+    );
     updateControlAvailability();
   }
 
-  function updateFrameStatus(frame) {
-    const age = frameAgeMinutes(frame);
-    const latest = state.index === state.frames.length - 1;
-    if (!latest) {
-      setStatus(`Historische Aufnahme · ${formatTime(frame)}`, "HISTORY");
+  function updateFrameStatus(frame, latest) {
+    if (latest) {
+      setStatus(
+        "LIVE · neueste verfügbare EUMETSAT-Aufnahme direkt geladen",
+        "FRESH",
+      );
       return;
     }
-    const limit = Number(state.metadata?.freshnessLimitMinutes || 20);
-    if (age !== null && age <= limit) {
-      setStatus(`Aktuell · ${Math.round(age)} Min. alt · 10-Minuten-MTG-Zyklus`, "FRESH");
-    } else if (age !== null) {
-      setStatus(`VERALTET · ${Math.round(age)} Min. alt · Grenze ${limit} Min.`, "STALE");
-    } else {
-      setStatus("Aufnahmezeit unbekannt", "ERROR");
-    }
+    setStatus(`Historische Aufnahme · ${formatTime(frame)}`, "HISTORY");
   }
 
   function setStatus(copy, tone) {
