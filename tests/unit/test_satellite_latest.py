@@ -6,7 +6,11 @@ import httpx
 import pytest
 from PIL import Image
 
-from nowcast_service.satellite_image import EUMETVIEW_WMS_URL, PRODUCTS_BY_KEY, SatelliteImageService
+from nowcast_service.satellite_image import (
+    EUMETVIEW_WMS_URL,
+    PRODUCTS_BY_KEY,
+    SatelliteImageService,
+)
 from nowcast_service.satellite_latest import (
     _download_latest_frame,
     render_latest_satellite_image,
