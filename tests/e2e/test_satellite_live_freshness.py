@@ -105,7 +105,7 @@ def test_live_satellite_uses_verified_age_for_stale_status() -> None:
         time_text = page.locator("#awc-satellite-time").inner_text()
         image_src = page.locator("#awc-satellite-image").get_attribute("src") or ""
 
-        assert status == "VERALTET · 56 Min. alt · Grenze 20 Min."
+        assert status == "VERALTET · Wolkentypen RGB · 56 Min. alt · Grenze 20 Min."
         assert "06:50" in time_text
         assert "56 Min. alt" in time_text
         assert image_src.startswith("blob:")

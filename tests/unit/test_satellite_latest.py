@@ -10,7 +10,6 @@ from PIL import Image
 from nowcast_service.satellite_image import (
     EUMETVIEW_WMS_URL,
     PRODUCTS_BY_KEY,
-    SatelliteFrame,
     SatelliteImageService,
     SatelliteProduct,
 )
@@ -205,7 +204,7 @@ async def test_data_store_candidates_use_recent_hour_products(
         datetime(2026, 8, 7, 7, 10, tzinfo=UTC),
         datetime(2026, 8, 7, 7, 0, tzinfo=UTC),
     )
-    assert any("EO%3AEUM%3ADAT%3A0662" in url for url in BrowseAsyncClient.requested_urls)
+    assert any("EO%3AEUM%3ADAT%3A1022" in url for url in BrowseAsyncClient.requested_urls)
 
 
 @pytest.mark.asyncio
@@ -219,16 +218,21 @@ async def test_pixel_match_returns_exact_candidate(
     older = datetime(2026, 8, 7, 7, 0, tzinfo=UTC)
     latest_image = Image.new("RGB", (120, 80), (20, 30, 40))
 
-    async def fake_archive(
+    async def fake_wms(
         selected: SatelliteProduct,
-        frame: SatelliteFrame,
+        *,
+        width: int,
+        height: int,
+        observed_at: datetime | None = None,
+        cache_bypass: bool = False,
     ) -> Image.Image:
+        del width, height, cache_bypass
         assert selected is product
-        if frame.observed_at == older:
+        if observed_at == older:
             return latest_image.copy()
         return Image.new("RGB", (120, 80), (90, 80, 70))
 
-    monkeypatch.setattr(service, "_download_frame", fake_archive)
+    monkeypatch.setattr("nowcast_service.satellite_latest._wms_image", fake_wms)
 
     assert await _match_observation_time(
         service=service,
@@ -288,10 +292,18 @@ async def test_render_latest_adds_verified_acquisition_time(
     observed = datetime(2026, 8, 7, 7, 10, tzinfo=UTC)
 
     async def fake_download(_: object) -> Image.Image:
-        return Image.new("RGB", (1200, 850), (20, 30, 40))
+        return Image.new("RGB", (360, 255), (20, 30, 40))
 
     async def fake_resolve(**_: object) -> tuple[datetime, str]:
         return observed, "DATA_STORE_WMS_PIXEL_MATCH"
+
+    async def fake_display(
+        selected: SatelliteProduct,
+        selected_time: datetime | None,
+    ) -> Image.Image:
+        assert selected.key == "cloudtype"
+        assert selected_time == observed
+        return Image.new("RGB", (2400, 1700), (20, 30, 40))
 
     monkeypatch.setattr(
         "nowcast_service.satellite_latest._download_latest_frame",
@@ -300,6 +312,10 @@ async def test_render_latest_adds_verified_acquisition_time(
     monkeypatch.setattr(
         "nowcast_service.satellite_latest._resolve_observation_time",
         fake_resolve,
+    )
+    monkeypatch.setattr(
+        "nowcast_service.satellite_latest._download_display_frame",
+        fake_display,
     )
     service = SatelliteImageService(tmp_path)
     result = await render_latest_satellite_image(
@@ -312,7 +328,7 @@ async def test_render_latest_adds_verified_acquisition_time(
 
     with Image.open(io.BytesIO(result.png)) as image:
         rendered = image.convert("RGB")
-        assert rendered.size == (1200, 850)
+        assert rendered.size == (2400, 1700)
         red_pixels = sum(
             1
             for red, green, blue in rendered.getdata()
@@ -331,10 +347,18 @@ async def test_render_latest_does_not_invent_unverified_time(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     async def fake_download(_: object) -> Image.Image:
-        return Image.new("RGB", (1200, 850), (20, 30, 40))
+        return Image.new("RGB", (360, 255), (20, 30, 40))
 
     async def fake_resolve(**_: object) -> tuple[None, str]:
         return None, "UNVERIFIED"
+
+    async def fake_display(
+        selected: SatelliteProduct,
+        selected_time: datetime | None,
+    ) -> Image.Image:
+        assert selected.key == "cloudtype"
+        assert selected_time is None
+        return Image.new("RGB", (2400, 1700), (20, 30, 40))
 
     monkeypatch.setattr(
         "nowcast_service.satellite_latest._download_latest_frame",
@@ -343,6 +367,10 @@ async def test_render_latest_does_not_invent_unverified_time(
     monkeypatch.setattr(
         "nowcast_service.satellite_latest._resolve_observation_time",
         fake_resolve,
+    )
+    monkeypatch.setattr(
+        "nowcast_service.satellite_latest._download_display_frame",
+        fake_display,
     )
     result = await render_latest_satellite_image(
         service=SatelliteImageService(tmp_path),
@@ -375,5 +403,5 @@ async def test_latest_http_error_is_wrapped(
         ),
     )
 
-    with pytest.raises(RuntimeError, match="latest frame unavailable"):
+    with pytest.raises(RuntimeError, match="frame unavailable"):
         await _download_latest_frame(PRODUCTS_BY_KEY["cloudtype"])
