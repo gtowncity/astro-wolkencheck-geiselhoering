@@ -349,7 +349,7 @@ def test_deferred_forecast_compact_layout_and_satellite_controls() -> None:
         assert page.locator("#awc-satellite-range").get_attribute("max") == "2"
 
         page.locator("#awc-satellite-zoom-in").click()
-        assert "scale(1.35)" in page.locator("#awc-satellite-image").evaluate(
+        assert "scale(1.4)" in page.locator("#awc-satellite-image").evaluate(
             "node => node.style.transform"
         )
 
