@@ -12,7 +12,7 @@ from nowcast_service.satellite_latest import (
 
 
 @pytest.mark.asyncio
-async def test_stale_cloudtype_automatically_uses_fresh_infrared(
+async def test_stale_cloudtype_prefers_fresh_coloured_rgb_before_infrared(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -20,25 +20,39 @@ async def test_stale_cloudtype_automatically_uses_fresh_infrared(
     calls: list[str] = []
 
     async def fake_candidate(
-        *,
-        service: object,
-        product: SatelliteProduct,
+        *, service: SatelliteImageService, product: SatelliteProduct
     ) -> _LatestCandidate:
         del service
         key = product.key
         calls.append(key)
-        age = 70 if key == "cloudtype" else 8
+        ages = {
+            "cloudtype": 70,
+            "cloudphase": 8,
+            "geocolour": 12,
+            "infrared": 3,
+        }
         return _LatestCandidate(
-            image=Image.new("RGB", (1200, 850), (20, 30, 40)),
+            image=Image.new("RGB", (360, 255), (20, 30, 40)),
             product=product,
             retrieved_at=reference,
-            observed_at=reference - timedelta(minutes=age),
+            observed_at=reference - timedelta(minutes=ages[key]),
             observation_time_source="DATA_STORE_WMS_PIXEL_MATCH",
         )
+
+    async def fake_display(
+        product: SatelliteProduct, observed_at: datetime | None
+    ) -> Image.Image:
+        assert product.key == "cloudphase"
+        assert observed_at == reference - timedelta(minutes=8)
+        return Image.new("RGB", (2400, 1700), (20, 30, 40))
 
     monkeypatch.setattr(
         "nowcast_service.satellite_latest._load_latest_candidate",
         fake_candidate,
+    )
+    monkeypatch.setattr(
+        "nowcast_service.satellite_latest._download_display_frame",
+        fake_display,
     )
 
     result = await render_latest_satellite_image(
@@ -49,8 +63,9 @@ async def test_stale_cloudtype_automatically_uses_fresh_infrared(
         location_name="Geiselhöring",
     )
 
-    assert calls == ["cloudtype", "infrared"]
-    assert result.product.key == "infrared"
+    assert calls[0] == "cloudtype"
+    assert set(calls[1:]) == {"cloudphase", "geocolour", "infrared"}
+    assert result.product.key == "cloudphase"
     assert result.requested_product is not None
     assert result.requested_product.key == "cloudtype"
     assert result.auto_fallback is True
@@ -66,23 +81,32 @@ async def test_fresh_requested_product_is_not_replaced(
     calls: list[str] = []
 
     async def fake_candidate(
-        *,
-        service: object,
-        product: SatelliteProduct,
+        *, service: SatelliteImageService, product: SatelliteProduct
     ) -> _LatestCandidate:
         del service
         calls.append(product.key)
         return _LatestCandidate(
-            image=Image.new("RGB", (1200, 850), (20, 30, 40)),
+            image=Image.new("RGB", (360, 255), (20, 30, 40)),
             product=product,
             retrieved_at=reference,
             observed_at=reference - timedelta(minutes=8),
             observation_time_source="DATA_STORE_WMS_PIXEL_MATCH",
         )
 
+    async def fake_display(
+        product: SatelliteProduct, observed_at: datetime | None
+    ) -> Image.Image:
+        assert product.key == "cloudtype"
+        assert observed_at == reference - timedelta(minutes=8)
+        return Image.new("RGB", (2400, 1700), (20, 30, 40))
+
     monkeypatch.setattr(
         "nowcast_service.satellite_latest._load_latest_candidate",
         fake_candidate,
+    )
+    monkeypatch.setattr(
+        "nowcast_service.satellite_latest._download_display_frame",
+        fake_display,
     )
 
     result = await render_latest_satellite_image(
