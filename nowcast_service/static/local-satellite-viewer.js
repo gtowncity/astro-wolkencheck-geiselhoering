@@ -25,6 +25,8 @@
     globalEventsBound: false,
     mountQueued: false,
     mountAttempts: 0,
+    imageObjectUrl: null,
+    loadSerial: 0,
   };
 
   const byId = (id) => document.getElementById(id);
@@ -52,6 +54,17 @@
       timeZone: "UTC",
       timeZoneName: "short",
     }).format(date);
+  }
+
+  function freshnessLimitMinutes() {
+    const value = Number(state.metadata?.freshnessLimitMinutes);
+    return Number.isFinite(value) && value >= 0 ? value : 20;
+  }
+
+  function clearImageObjectUrl() {
+    if (!state.imageObjectUrl) return;
+    URL.revokeObjectURL(state.imageObjectUrl);
+    state.imageObjectUrl = null;
   }
 
   function imageUrl(frame, latest = false) {
@@ -138,6 +151,7 @@
     if (!host) return false;
 
     stopPlayback();
+    clearImageObjectUrl();
     host.classList.add("awc-satellite-host");
     host.removeAttribute("role");
     host.removeAttribute("aria-label");
@@ -322,6 +336,68 @@
     }
   }
 
+  function latestStatusFromHeaders(response) {
+    const observedAt = response.headers.get("X-Satellite-Observation-Time");
+    const ageMinutes = Number(response.headers.get("X-Satellite-Age-Minutes"));
+    const fresh = response.headers.get("X-Satellite-Fresh");
+    if (observedAt && Number.isFinite(ageMinutes)) {
+      const roundedAge = Math.max(0, Math.round(ageMinutes));
+      const formatted = formatTime(observedAt);
+      setText(
+        byId("awc-satellite-time"),
+        `LIVE · Aufnahme ${formatted} · ${roundedAge} Min. alt`,
+      );
+      if (fresh === "true") {
+        setStatus(`LIVE · Aufnahme ${formatted} · ${roundedAge} Min. alt`, "FRESH");
+      } else {
+        setStatus(
+          `VERALTET · ${roundedAge} Min. alt · Grenze ${Math.round(freshnessLimitMinutes())} Min.`,
+          "STALE",
+        );
+      }
+      return;
+    }
+    setText(byId("awc-satellite-time"), "LIVE · Aufnahmezeit nicht verifiziert");
+    setStatus(
+      "LIVE · neueste verfügbare EUMETSAT-Aufnahme geladen · Aufnahmezeit nicht verifiziert",
+      "WAITING",
+    );
+  }
+
+  function imageLoadFailed(image, placeholder) {
+    if (!image.isConnected) return;
+    image.classList.remove("is-loading");
+    setHidden(placeholder, false);
+    setText(placeholder, "Diese echte EUMETSAT-Aufnahme konnte nicht geladen werden.");
+    setStatus("Aufnahme nicht verfügbar", "ERROR");
+  }
+
+  async function loadLatestFrame(url, image, placeholder, serial) {
+    try {
+      const response = await fetch(url, { cache: "no-store" });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const blob = await response.blob();
+      if (serial !== state.loadSerial || !image.isConnected) return;
+      const objectUrl = URL.createObjectURL(blob);
+      clearImageObjectUrl();
+      state.imageObjectUrl = objectUrl;
+      image.onload = () => {
+        if (serial !== state.loadSerial || !image.isConnected) return;
+        setHidden(placeholder, true);
+        image.classList.remove("is-loading");
+        latestStatusFromHeaders(response);
+      };
+      image.onerror = () => {
+        if (serial !== state.loadSerial) return;
+        imageLoadFailed(image, placeholder);
+      };
+      image.src = objectUrl;
+    } catch (error) {
+      console.warn("EUMETSAT-Livebild konnte nicht geladen werden", error);
+      if (serial === state.loadSerial) imageLoadFailed(image, placeholder);
+    }
+  }
+
   function showFrame(index, options = {}) {
     if (!state.enabled || !state.frames.length) return;
     const bounded = Math.max(0, Math.min(state.frames.length - 1, index));
@@ -334,45 +410,47 @@
     const range = byId("awc-satellite-range");
     if (!image || !placeholder) return;
 
+    state.loadSerial += 1;
+    const serial = state.loadSerial;
     if (range && range.value !== String(bounded)) range.value = String(bounded);
     setHidden(placeholder, false);
     setText(
       placeholder,
       latest
-        ? "Neueste EUMETSAT-Aufnahme wird direkt geladen …"
+        ? "Neueste EUMETSAT-Aufnahme wird direkt geladen und geprüft …"
         : "Historisches Satellitenbild wird geladen …",
     );
     image.classList.add("is-loading");
     const url = imageUrl(frame, latest);
+
+    if (latest) {
+      setText(byId("awc-satellite-time"), "LIVE · Aufnahmezeit wird geprüft …");
+      loadLatestFrame(url, image, placeholder, serial);
+      updateControlAvailability();
+      return;
+    }
+
+    clearImageObjectUrl();
     image.onload = () => {
-      if (!image.isConnected || image.src !== new URL(url, window.location.href).href) return;
+      if (
+        serial !== state.loadSerial
+        || !image.isConnected
+        || image.src !== new URL(url, window.location.href).href
+      ) return;
       setHidden(placeholder, true);
       image.classList.remove("is-loading");
-      updateFrameStatus(frame, latest);
+      updateFrameStatus(frame);
     };
     image.onerror = () => {
-      if (!image.isConnected) return;
-      image.classList.remove("is-loading");
-      setHidden(placeholder, false);
-      setText(placeholder, "Diese echte EUMETSAT-Aufnahme konnte nicht geladen werden.");
-      setStatus("Aufnahme nicht verfügbar", "ERROR");
+      if (serial !== state.loadSerial) return;
+      imageLoadFailed(image, placeholder);
     };
     if (image.getAttribute("src") !== url || options.force) image.src = url;
-    setText(
-      byId("awc-satellite-time"),
-      latest ? "LIVE · neueste verfügbare Aufnahme" : formatTime(frame),
-    );
+    setText(byId("awc-satellite-time"), formatTime(frame));
     updateControlAvailability();
   }
 
-  function updateFrameStatus(frame, latest) {
-    if (latest) {
-      setStatus(
-        "LIVE · neueste verfügbare EUMETSAT-Aufnahme direkt geladen",
-        "FRESH",
-      );
-      return;
-    }
+  function updateFrameStatus(frame) {
     setStatus(`Historische Aufnahme · ${formatTime(frame)}`, "HISTORY");
   }
 
@@ -387,6 +465,8 @@
     const image = byId("awc-satellite-image");
     const placeholder = byId("awc-satellite-placeholder");
     if (image && options.removeImage !== false && image.hasAttribute("src")) {
+      state.loadSerial += 1;
+      clearImageObjectUrl();
       image.removeAttribute("src");
     }
     if (placeholder) {
