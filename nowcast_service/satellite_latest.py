@@ -450,12 +450,13 @@ async def _match_observation_time(
     del service  # Kept in the signature for API/test compatibility.
     latest_signature = _image_signature(latest_image)
     for candidate in candidates[:MAX_OBSERVATION_CANDIDATES]:
+        frame = SatelliteFrame(candidate)
         try:
             archived = await _wms_image(
                 product,
                 width=VERIFY_WIDTH,
                 height=VERIFY_HEIGHT,
-                observed_at=candidate,
+                observed_at=frame.observed_at,
             )
         except SatelliteImageError:
             continue
