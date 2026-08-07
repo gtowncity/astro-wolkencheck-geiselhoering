@@ -15,6 +15,7 @@ from PIL import Image, ImageDraw
 
 from nowcast_service.satellite_image import (
     EUMETVIEW_WMS_URL,
+    FRESHNESS_LIMIT,
     IMAGE_HEIGHT,
     IMAGE_WIDTH,
     SatelliteFrame,
@@ -41,6 +42,10 @@ DATA_STORE_COLLECTION_BY_PRODUCT = {
     "lightning": "EO:EUM:DAT:0687",
 }
 MAX_OBSERVATION_CANDIDATES = 8
+# For the live position, freshness is more important than preserving a delayed
+# derived RGB. IR10.5 is closest to the direct FCI observation stream; GeoColour
+# is the secondary fallback. Historical frames are never substituted.
+LIVE_FALLBACK_PRODUCT_KEYS = ("infrared", "geocolour")
 
 
 @dataclass(frozen=True)
@@ -52,6 +57,86 @@ class LatestSatelliteImageResult:
     retrieved_at: datetime
     observed_at: datetime | None = None
     observation_time_source: str = "UNVERIFIED"
+    requested_product: SatelliteProduct | None = None
+    auto_fallback: bool = False
+
+
+@dataclass(frozen=True)
+class _LatestCandidate:
+    image: Image.Image
+    product: SatelliteProduct
+    retrieved_at: datetime
+    observed_at: datetime | None
+    observation_time_source: str
+
+
+def _candidate_age(candidate: _LatestCandidate) -> timedelta | None:
+    if candidate.observed_at is None:
+        return None
+    return max(timedelta(0), candidate.retrieved_at - candidate.observed_at)
+
+
+def _candidate_is_fresh(candidate: _LatestCandidate) -> bool:
+    age = _candidate_age(candidate)
+    return age is not None and age <= FRESHNESS_LIMIT
+
+
+def _candidate_is_newer(candidate: _LatestCandidate, current: _LatestCandidate) -> bool:
+    if candidate.observed_at is None:
+        return False
+    if current.observed_at is None:
+        return True
+    return candidate.observed_at > current.observed_at
+
+
+async def _load_latest_candidate(
+    *,
+    service: SatelliteImageService,
+    product: SatelliteProduct,
+) -> _LatestCandidate:
+    retrieved_at = datetime.now(UTC)
+    image = await _download_latest_frame(product)
+    observed_at, observation_time_source = await _resolve_observation_time(
+        service=service,
+        product=product,
+        latest_image=image,
+        reference=retrieved_at,
+    )
+    return _LatestCandidate(
+        image=image,
+        product=product,
+        retrieved_at=retrieved_at,
+        observed_at=observed_at,
+        observation_time_source=observation_time_source,
+    )
+
+
+async def _select_freshest_live_candidate(
+    *,
+    service: SatelliteImageService,
+    requested: SatelliteProduct,
+) -> _LatestCandidate:
+    """Prefer the requested layer, but replace a stale/unverified live image if possible."""
+
+    best = await _load_latest_candidate(service=service, product=requested)
+    if _candidate_is_fresh(best):
+        return best
+
+    for fallback_key in LIVE_FALLBACK_PRODUCT_KEYS:
+        if fallback_key == requested.key:
+            continue
+        try:
+            fallback = await _load_latest_candidate(
+                service=service,
+                product=service.product(fallback_key),
+            )
+        except SatelliteImageError:
+            continue
+        if _candidate_is_newer(fallback, best):
+            best = fallback
+        if _candidate_is_fresh(fallback):
+            return fallback
+    return best
 
 
 async def render_latest_satellite_image(
@@ -62,34 +147,34 @@ async def render_latest_satellite_image(
     longitude: float,
     location_name: str,
 ) -> LatestSatelliteImageResult:
-    """Fetch the WMS latest image and independently verify its acquisition time."""
+    """Fetch the freshest truthful live image, falling back from delayed RGBs."""
 
-    product = service.product(product_key)
+    requested_product = service.product(product_key)
     location_to_pixel(latitude=latitude, longitude=longitude)
-    retrieved_at = datetime.now(UTC)
-    image = await _download_latest_frame(product)
-    observed_at, observation_time_source = await _resolve_observation_time(
+    candidate = await _select_freshest_live_candidate(
         service=service,
-        product=product,
-        latest_image=image,
-        reference=retrieved_at,
+        requested=requested_product,
     )
+    auto_fallback = candidate.product.key != requested_product.key
     png = await asyncio.to_thread(
         _draw_latest_location_pin,
-        image,
+        candidate.image,
         latitude=latitude,
         longitude=longitude,
         location_name=location_name,
-        retrieved_at=retrieved_at,
-        observed_at=observed_at,
-        product=product,
+        retrieved_at=candidate.retrieved_at,
+        observed_at=candidate.observed_at,
+        product=candidate.product,
+        requested_product=requested_product if auto_fallback else None,
     )
     return LatestSatelliteImageResult(
         png=png,
-        product=product,
-        retrieved_at=retrieved_at,
-        observed_at=observed_at,
-        observation_time_source=observation_time_source,
+        product=candidate.product,
+        retrieved_at=candidate.retrieved_at,
+        observed_at=candidate.observed_at,
+        observation_time_source=candidate.observation_time_source,
+        requested_product=requested_product,
+        auto_fallback=auto_fallback,
     )
 
 
@@ -340,6 +425,7 @@ def _draw_latest_location_pin(
     retrieved_at: datetime,
     observed_at: datetime | None,
     product: SatelliteProduct,
+    requested_product: SatelliteProduct | None = None,
 ) -> bytes:
     """Reuse the existing location pin and replace its footer with live provenance."""
 
@@ -365,9 +451,10 @@ def _draw_latest_location_pin(
             "Aufnahmezeit noch nicht verifiziert · "
             f"LIVE-Abruf {_format_retrieval_time(retrieved_at)}"
         )
-    provenance = (
-        f"EUMETSAT Meteosat-12 / MTG-FCI · {product.title} · {timing}"
-    )
+    product_copy = product.title
+    if requested_product is not None and requested_product.key != product.key:
+        product_copy = f"AUTO aktuell: {requested_product.title} -> {product.title}"
+    provenance = f"EUMETSAT Meteosat-12 / MTG-FCI · {product_copy} · {timing}"
     provenance = _label_text(provenance, unicode_supported=unicode_supported)
     box = draw.textbbox((0, 0), provenance, font=font)
     text_height = box[3] - box[1]
