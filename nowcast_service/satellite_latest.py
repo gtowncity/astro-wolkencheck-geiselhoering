@@ -113,6 +113,13 @@ async def _download_latest_frame(product: SatelliteProduct) -> Image.Image:
     return await asyncio.to_thread(_validated_image, response.content)
 
 
+def _format_retrieval_time(retrieved_at: datetime) -> str:
+    """Show the fetch time in local system time and UTC to avoid timezone confusion."""
+
+    local_time = retrieved_at.astimezone()
+    return f"{local_time:%H:%M} Ortszeit ({retrieved_at:%H:%M UTC})"
+
+
 def _draw_latest_location_pin(
     image: Image.Image,
     *,
@@ -138,7 +145,7 @@ def _draw_latest_location_pin(
     font, unicode_supported = _label_font(17)
     provenance = (
         f"EUMETSAT Meteosat-12 / MTG-FCI · {product.title} · "
-        f"neueste verfügbare Aufnahme · direkt geladen {retrieved_at:%H:%M UTC}"
+        f"neueste verfügbare Aufnahme · LIVE-Abruf {_format_retrieval_time(retrieved_at)}"
     )
     provenance = _label_text(provenance, unicode_supported=unicode_supported)
     box = draw.textbbox((0, 0), provenance, font=font)
