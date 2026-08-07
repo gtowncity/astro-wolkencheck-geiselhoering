@@ -30,11 +30,14 @@ from nowcast_service.satellite_image import (
 )
 
 DATA_STORE_BROWSE_URL = "https://api.eumetsat.int/data/browse"
+# The RGB views are generated from the corresponding raw MTG acquisition cycles.
+# A candidate timestamp is never accepted from these collections on its own: the
+# timestamped WMS raster must reproduce the untimed live WMS raster pixel-exactly.
 DATA_STORE_COLLECTION_BY_PRODUCT = {
-    "geocolour": "EO:EUM:DAT:0913",
+    "geocolour": "EO:EUM:DAT:0662",
     "infrared": "EO:EUM:DAT:0665",
-    "cloudtype": "EO:EUM:DAT:1022",
-    "cloudphase": "EO:EUM:DAT:0870",
+    "cloudtype": "EO:EUM:DAT:0662",
+    "cloudphase": "EO:EUM:DAT:0662",
     "lightning": "EO:EUM:DAT:0687",
 }
 MAX_OBSERVATION_CANDIDATES = 8
@@ -181,12 +184,14 @@ async def _data_store_candidate_times(
     if collection_id is None:
         return ()
     encoded_collection = quote(collection_id, safe="")
+    tls_context = truststore.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
     timeout = httpx.Timeout(12.0, connect=5.0)
     candidates: set[datetime] = set()
     try:
         async with httpx.AsyncClient(
             timeout=timeout,
             trust_env=False,
+            verify=tls_context,
             follow_redirects=True,
         ) as client:
             for hour_offset in range(3):
