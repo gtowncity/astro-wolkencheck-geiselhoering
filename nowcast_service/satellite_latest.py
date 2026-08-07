@@ -1,4 +1,4 @@
-"""Direct retrieval of the latest available EUMETSAT WMS satellite image."""
+"""Fast, high-resolution retrieval of current EUMETSAT MTG satellite imagery."""
 
 from __future__ import annotations
 
@@ -16,13 +16,10 @@ from PIL import Image, ImageDraw
 from nowcast_service.satellite_image import (
     EUMETVIEW_WMS_URL,
     FRESHNESS_LIMIT,
-    IMAGE_HEIGHT,
-    IMAGE_WIDTH,
     SatelliteFrame,
     SatelliteImageError,
     SatelliteImageService,
     SatelliteProduct,
-    _draw_location_pin,
     _label_font,
     _label_text,
     _validated_image,
@@ -31,21 +28,23 @@ from nowcast_service.satellite_image import (
 )
 
 DATA_STORE_BROWSE_URL = "https://api.eumetsat.int/data/browse"
-# The RGB views are generated from the corresponding raw MTG acquisition cycles.
-# A candidate timestamp is never accepted from these collections on its own: the
-# timestamped WMS raster must reproduce the untimed live WMS raster pixel-exactly.
+# Use the collection that corresponds to the visualisation wherever one exists.
+# The sensing time is still accepted only after an exact WMS pixel match.
 DATA_STORE_COLLECTION_BY_PRODUCT = {
-    "geocolour": "EO:EUM:DAT:0662",
+    "geocolour": "EO:EUM:DAT:0913",
     "infrared": "EO:EUM:DAT:0665",
-    "cloudtype": "EO:EUM:DAT:0662",
-    "cloudphase": "EO:EUM:DAT:0662",
+    "cloudtype": "EO:EUM:DAT:1022",
+    "cloudphase": "EO:EUM:DAT:0870",
     "lightning": "EO:EUM:DAT:0687",
 }
-MAX_OBSERVATION_CANDIDATES = 8
-# For the live position, freshness is more important than preserving a delayed
-# derived RGB. IR10.5 is closest to the direct FCI observation stream; GeoColour
-# is the secondary fallback. Historical frames are never substituted.
-LIVE_FALLBACK_PRODUCT_KEYS = ("infrared", "geocolour")
+MAX_OBSERVATION_CANDIDATES = 6
+VERIFY_WIDTH = 360
+VERIFY_HEIGHT = 255
+DISPLAY_WIDTH = 2400
+DISPLAY_HEIGHT = 1700
+# Preserve a coloured RGB whenever possible. IR is the final near-real-time fallback.
+COLOUR_PRODUCT_KEYS = ("cloudtype", "cloudphase", "geocolour")
+LIVE_FALLBACK_PRODUCT_KEYS = ("cloudtype", "cloudphase", "geocolour", "infrared")
 
 
 @dataclass(frozen=True)
@@ -89,6 +88,91 @@ def _candidate_is_newer(candidate: _LatestCandidate, current: _LatestCandidate) 
     return candidate.observed_at > current.observed_at
 
 
+def _is_colour(product: SatelliteProduct) -> bool:
+    return product.key in COLOUR_PRODUCT_KEYS
+
+
+async def _wms_image(
+    product: SatelliteProduct,
+    *,
+    width: int,
+    height: int,
+    observed_at: datetime | None = None,
+    cache_bypass: bool = False,
+) -> Image.Image:
+    """Download one EUMETView WMS image at an explicit render resolution."""
+
+    tls_context = truststore.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+    timeout = httpx.Timeout(25.0, connect=7.0)
+    params = {
+        "service": "WMS",
+        "version": "1.3.0",
+        "request": "GetMap",
+        "layers": product.layer,
+        "styles": "",
+        "crs": "EPSG:4326",
+        "bbox": _wms_bbox(),
+        "width": str(width),
+        "height": str(height),
+        "format": "image/jpeg",
+        "bgcolor": "0x000000",
+    }
+    if observed_at is not None:
+        params["time"] = observed_at.astimezone(UTC).isoformat().replace("+00:00", "Z")
+    headers = {"User-Agent": "Astro-Wolkencheck/4.3"}
+    if cache_bypass:
+        headers.update({"Cache-Control": "no-cache", "Pragma": "no-cache"})
+    try:
+        async with httpx.AsyncClient(
+            timeout=timeout,
+            trust_env=False,
+            verify=tls_context,
+            follow_redirects=True,
+        ) as client:
+            response = await client.get(
+                EUMETVIEW_WMS_URL,
+                params=params,
+                headers=headers,
+            )
+            response.raise_for_status()
+    except httpx.HTTPError as exc:
+        raise SatelliteImageError(
+            f"EUMETView frame unavailable: {type(exc).__name__}"
+        ) from exc
+    content_type = response.headers.get("content-type", "")
+    if not content_type.startswith("image/"):
+        raise SatelliteImageError(
+            f"EUMETView returned {content_type or 'no content type'}"
+        )
+    return await asyncio.to_thread(_validated_image, response.content)
+
+
+async def _download_latest_frame(product: SatelliteProduct) -> Image.Image:
+    """Download a small untimed WMS image used to identify the current frame."""
+
+    return await _wms_image(
+        product,
+        width=VERIFY_WIDTH,
+        height=VERIFY_HEIGHT,
+        cache_bypass=True,
+    )
+
+
+async def _download_display_frame(
+    product: SatelliteProduct,
+    observed_at: datetime | None,
+) -> Image.Image:
+    """Download the one selected live frame at the high display resolution."""
+
+    return await _wms_image(
+        product,
+        width=DISPLAY_WIDTH,
+        height=DISPLAY_HEIGHT,
+        observed_at=observed_at,
+        cache_bypass=observed_at is None,
+    )
+
+
 async def _load_latest_candidate(
     *,
     service: SatelliteImageService,
@@ -111,31 +195,57 @@ async def _load_latest_candidate(
     )
 
 
+async def _load_fallback_candidate(
+    service: SatelliteImageService,
+    key: str,
+) -> _LatestCandidate | None:
+    try:
+        return await _load_latest_candidate(service=service, product=service.product(key))
+    except SatelliteImageError:
+        return None
+
+
 async def _select_freshest_live_candidate(
     *,
     service: SatelliteImageService,
     requested: SatelliteProduct,
 ) -> _LatestCandidate:
-    """Prefer the requested layer, but replace a stale/unverified live image if possible."""
+    """Keep the selected RGB if fresh, otherwise prefer a fresh coloured RGB over IR."""
 
-    best = await _load_latest_candidate(service=service, product=requested)
-    if _candidate_is_fresh(best):
-        return best
+    requested_candidate = await _load_latest_candidate(service=service, product=requested)
+    if _candidate_is_fresh(requested_candidate):
+        return requested_candidate
 
-    for fallback_key in LIVE_FALLBACK_PRODUCT_KEYS:
-        if fallback_key == requested.key:
-            continue
-        try:
-            fallback = await _load_latest_candidate(
-                service=service,
-                product=service.product(fallback_key),
-            )
-        except SatelliteImageError:
-            continue
-        if _candidate_is_newer(fallback, best):
-            best = fallback
-        if _candidate_is_fresh(fallback):
-            return fallback
+    fallback_keys = [
+        key
+        for key in LIVE_FALLBACK_PRODUCT_KEYS
+        if key != requested.key
+    ]
+    loaded = await asyncio.gather(
+        *(_load_fallback_candidate(service, key) for key in fallback_keys)
+    )
+    candidates = [requested_candidate, *(item for item in loaded if item is not None)]
+
+    fresh_coloured = [
+        item for item in candidates if _candidate_is_fresh(item) and _is_colour(item.product)
+    ]
+    if fresh_coloured:
+        return max(
+            fresh_coloured,
+            key=lambda item: item.observed_at or datetime.min.replace(tzinfo=UTC),
+        )
+
+    fresh_any = [item for item in candidates if _candidate_is_fresh(item)]
+    if fresh_any:
+        return max(
+            fresh_any,
+            key=lambda item: item.observed_at or datetime.min.replace(tzinfo=UTC),
+        )
+
+    best = requested_candidate
+    for candidate in candidates[1:]:
+        if _candidate_is_newer(candidate, best):
+            best = candidate
     return best
 
 
@@ -147,7 +257,7 @@ async def render_latest_satellite_image(
     longitude: float,
     location_name: str,
 ) -> LatestSatelliteImageResult:
-    """Fetch the freshest truthful live image, falling back from delayed RGBs."""
+    """Select a truthful current frame, then render that one frame in HD."""
 
     requested_product = service.product(product_key)
     location_to_pixel(latitude=latitude, longitude=longitude)
@@ -156,9 +266,10 @@ async def render_latest_satellite_image(
         requested=requested_product,
     )
     auto_fallback = candidate.product.key != requested_product.key
+    display_image = await _download_display_frame(candidate.product, candidate.observed_at)
     png = await asyncio.to_thread(
         _draw_latest_location_pin,
-        candidate.image,
+        display_image,
         latitude=latitude,
         longitude=longitude,
         location_name=location_name,
@@ -178,52 +289,6 @@ async def render_latest_satellite_image(
     )
 
 
-async def _download_latest_frame(product: SatelliteProduct) -> Image.Image:
-    """Request EUMETView GetMap without ``time`` so WMS returns its latest image."""
-
-    tls_context = truststore.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
-    timeout = httpx.Timeout(30.0, connect=8.0)
-    try:
-        async with httpx.AsyncClient(
-            timeout=timeout,
-            trust_env=False,
-            verify=tls_context,
-            follow_redirects=True,
-        ) as client:
-            response = await client.get(
-                EUMETVIEW_WMS_URL,
-                params={
-                    "service": "WMS",
-                    "version": "1.3.0",
-                    "request": "GetMap",
-                    "layers": product.layer,
-                    "styles": "",
-                    "crs": "EPSG:4326",
-                    "bbox": _wms_bbox(),
-                    "width": str(IMAGE_WIDTH),
-                    "height": str(IMAGE_HEIGHT),
-                    "format": "image/png",
-                    "transparent": "false",
-                },
-                headers={
-                    "User-Agent": "Astro-Wolkencheck/4.3",
-                    "Cache-Control": "no-cache",
-                    "Pragma": "no-cache",
-                },
-            )
-            response.raise_for_status()
-    except httpx.HTTPError as exc:
-        raise SatelliteImageError(
-            f"EUMETView latest frame unavailable: {type(exc).__name__}"
-        ) from exc
-    content_type = response.headers.get("content-type", "")
-    if not content_type.startswith("image/"):
-        raise SatelliteImageError(
-            f"EUMETView returned {content_type or 'no content type'}"
-        )
-    return await asyncio.to_thread(_validated_image, response.content)
-
-
 async def _resolve_observation_time(
     *,
     service: SatelliteImageService,
@@ -231,7 +296,7 @@ async def _resolve_observation_time(
     latest_image: Image.Image,
     reference: datetime,
 ) -> tuple[datetime | None, str]:
-    """Resolve a real timestamp only when its exact WMS pixels match the live image."""
+    """Resolve time by matching tiny equal-resolution WMS images instead of full frames."""
 
     data_store_candidates = await _data_store_candidate_times(product, reference)
     matched = await _match_observation_time(
@@ -270,7 +335,7 @@ async def _data_store_candidate_times(
         return ()
     encoded_collection = quote(collection_id, safe="")
     tls_context = truststore.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
-    timeout = httpx.Timeout(12.0, connect=5.0)
+    timeout = httpx.Timeout(10.0, connect=4.0)
     candidates: set[datetime] = set()
     try:
         async with httpx.AsyncClient(
@@ -352,7 +417,7 @@ async def _capabilities_candidate_times(
     product: SatelliteProduct,
     reference: datetime,
 ) -> tuple[datetime, ...]:
-    """Use EUMETView's own advertised frame list only as a verified fallback."""
+    """Use EUMETView's advertised frame list as a verified fallback."""
 
     try:
         metadata = await service.metadata(product.key)
@@ -380,14 +445,17 @@ async def _match_observation_time(
     latest_image: Image.Image,
     candidates: tuple[datetime, ...],
 ) -> datetime | None:
-    """Accept a timestamp only if requesting it reproduces the live WMS raster exactly."""
+    """Accept a timestamp only if its small WMS raster exactly matches the live raster."""
 
+    del service  # Kept in the signature for API/test compatibility.
     latest_signature = _image_signature(latest_image)
     for candidate in candidates[:MAX_OBSERVATION_CANDIDATES]:
         try:
-            archived = await service._download_frame(
+            archived = await _wms_image(
                 product,
-                SatelliteFrame(observed_at=candidate),
+                width=VERIFY_WIDTH,
+                height=VERIFY_HEIGHT,
+                observed_at=candidate,
             )
         except SatelliteImageError:
             continue
@@ -402,8 +470,6 @@ def _image_signature(image: Image.Image) -> tuple[tuple[int, int], str, bytes]:
 
 
 def _format_retrieval_time(retrieved_at: datetime) -> str:
-    """Show fetch time in local system time and UTC to avoid timezone confusion."""
-
     local_time = retrieved_at.astimezone()
     return f"{local_time:%H:%M} Ortszeit ({retrieved_at:%H:%M UTC})"
 
@@ -427,20 +493,72 @@ def _draw_latest_location_pin(
     product: SatelliteProduct,
     requested_product: SatelliteProduct | None = None,
 ) -> bytes:
-    """Reuse the existing location pin and replace its footer with live provenance."""
+    """Draw the pin and provenance once, avoiding a costly double HD PNG encode."""
 
-    annotated = _draw_location_pin(
-        image,
+    canvas = image.copy().convert("RGB")
+    draw = ImageDraw.Draw(canvas, "RGBA")
+    large_font, large_unicode = _label_font(32 if canvas.width >= 2000 else 21)
+    footer_font, footer_unicode = _label_font(24 if canvas.width >= 2000 else 17)
+    x, y = location_to_pixel(
         latitude=latitude,
         longitude=longitude,
-        location_name=location_name,
-        observed_at=observed_at or retrieved_at,
-        product=product,
+        width=canvas.width,
+        height=canvas.height,
     )
-    with Image.open(io.BytesIO(annotated)) as opened:
-        canvas = opened.convert("RGB")
-    draw = ImageDraw.Draw(canvas, "RGBA")
-    font, unicode_supported = _label_font(17)
+    scale = max(1.0, canvas.width / 1200)
+    outer = round(17 * scale)
+    inner = round(5 * scale)
+    pointer = round(28 * scale)
+    outline = max(3, round(4 * scale))
+    draw.polygon(
+        [
+            (x - round(11 * scale), y + round(9 * scale)),
+            (x + round(11 * scale), y + round(9 * scale)),
+            (x, y + pointer),
+        ],
+        fill=(220, 24, 45, 255),
+        outline=(255, 255, 255, 255),
+    )
+    draw.ellipse(
+        (x - outer, y - outer, x + outer, y + outer),
+        fill=(220, 24, 45, 255),
+        outline=(255, 255, 255, 255),
+        width=outline,
+    )
+    draw.ellipse(
+        (x - inner, y - inner, x + inner, y + inner),
+        fill=(255, 255, 255, 255),
+    )
+
+    safe_name = _label_text(
+        location_name.strip()[:80] or "Ausgewählter Ort",
+        unicode_supported=large_unicode,
+    )
+    label_box = draw.textbbox((0, 0), safe_name, font=large_font)
+    label_width = label_box[2] - label_box[0] + round(28 * scale)
+    label_height = label_box[3] - label_box[1] + round(20 * scale)
+    label_x = min(
+        max(round(10 * scale), x + round(24 * scale)),
+        canvas.width - label_width - round(10 * scale),
+    )
+    label_y = min(
+        max(round(10 * scale), y - label_height // 2),
+        canvas.height - label_height - round(10 * scale),
+    )
+    draw.rounded_rectangle(
+        (label_x, label_y, label_x + label_width, label_y + label_height),
+        radius=round(9 * scale),
+        fill=(5, 10, 15, 226),
+        outline=(255, 255, 255, 220),
+        width=max(2, round(2 * scale)),
+    )
+    draw.text(
+        (label_x + round(14 * scale), label_y + round(10 * scale)),
+        safe_name,
+        fill=(255, 255, 255, 255),
+        font=large_font,
+    )
+
     if observed_at is not None:
         timing = (
             f"Aufnahme {_format_observation_time(observed_at)} · "
@@ -454,21 +572,23 @@ def _draw_latest_location_pin(
     product_copy = product.title
     if requested_product is not None and requested_product.key != product.key:
         product_copy = f"AUTO aktuell: {requested_product.title} -> {product.title}"
-    provenance = f"EUMETSAT Meteosat-12 / MTG-FCI · {product_copy} · {timing}"
-    provenance = _label_text(provenance, unicode_supported=unicode_supported)
-    box = draw.textbbox((0, 0), provenance, font=font)
+    provenance = _label_text(
+        f"EUMETSAT Meteosat-12 / MTG-FCI · {product_copy} · {timing}",
+        unicode_supported=footer_unicode,
+    )
+    box = draw.textbbox((0, 0), provenance, font=footer_font)
     text_height = box[3] - box[1]
-    bar_height = max(text_height + 24, 54)
+    bar_height = max(text_height + round(30 * scale), round(54 * scale))
     draw.rectangle(
         (0, canvas.height - bar_height, canvas.width, canvas.height),
         fill=(5, 10, 15, 236),
     )
     draw.text(
-        (18, canvas.height - bar_height + 12),
+        (round(18 * scale), canvas.height - bar_height + round(12 * scale)),
         provenance,
         fill=(238, 244, 248, 255),
-        font=font,
+        font=footer_font,
     )
     output = io.BytesIO()
-    canvas.save(output, format="PNG", optimize=True)
+    canvas.save(output, format="PNG", compress_level=1)
     return output.getvalue()
